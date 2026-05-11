@@ -1,0 +1,48 @@
+# Keep this repository for source code and lightweight project metadata only.
+
+# Ignore everything by default.
+*
+
+# Allow directories so nested source files can be tracked.
+!*/
+
+# Source code and small project metadata.
+!.gitignore
+!*.py
+!*.md
+!*.txt
+!*.toml
+!*.yaml
+!*.yml
+!requirements*.txt
+
+# Never track datasets, trained models, generated outputs, or archives.
+/测试集/**
+/gmdcsa_subject4_test/**
+/外部数据集/**
+/5.9new/image/**
+/data/**
+/image/**
+/picture/**
+/__pycache__/**
+
+*.pth
+*.pt
+*.onnx
+*.npz
+*.npy
+*.csv
+*.json
+*.mp4
+*.avi
+*.mov
+*.m4v
+*.mkv
+*.zip
+*.rar
+*.7z
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.gif
