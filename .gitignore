@@ -18,6 +18,19 @@
 
 # Never track datasets, trained models, generated outputs, or archives.
 /测试集/**
+/外部数据集/**
+/gmdcsa_subject4_test/**
+/zenodo_falldb_folder_split/**
+/zenodo_falldb_video_split/**
+/zenodo_falldb_split/**
+/5.9new/image/**
+/5.9new/crossbar1/*/image/**
+/5.9new/crossbar1/*/models/**
+/5.9new/crossbar1/*/reports/**
+/5.9new/crossbar+/*/image/**
+/5.9new/crossbar+/*/models/**
+/5.9new/crossbar+/*/reports/**
+/测试集/**
 /gmdcsa_subject4_test/**
 /外部数据集/**
 /5.9new/image/**

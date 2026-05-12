@@ -221,6 +221,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-cpu", action="store_true")
     parser.add_argument("--disable-crossbar", action="store_true")
     parser.add_argument(
+        "--use-device-dynamics",
+        action="store_true",
+        help="Apply measured EPSC/PPF/LTP/LTD device response curves inside the Crossbar input mapping.",
+    )
+    parser.add_argument(
+        "--student-noise-mode",
+        choices=["gaussian", "device"],
+        default="gaussian",
+        help="Noise model used with --teacher-student-noise: gaussian is the legacy noise, device adds measured device-response perturbations.",
+    )
+    parser.add_argument(
         "--skip-visual-outputs",
         action="store_true",
         help="Skip per-video plots, key-frame images and process-frame visualizations during large batch experiments.",
@@ -326,6 +337,100 @@ def load_conductance_pair(data_dir: Path) -> tuple[np.ndarray, np.ndarray]:
         return hrs_fallback, lrs_fallback
 
 
+def find_first_existing_data_file(data_dir: Path, preferred_names: list[str], glob_pattern: str) -> Path:
+    for file_name in preferred_names:
+        candidate = data_dir / file_name
+        if candidate.exists():
+            return candidate
+    matches = sorted(data_dir.glob(glob_pattern))
+    if matches:
+        return matches[0]
+    raise FileNotFoundError(f"No data file found for pattern {glob_pattern} in {data_dir}")
+
+
+def normalize_device_curve(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float32)
+    values = values[np.isfinite(values)]
+    if len(values) == 0:
+        return np.ones(1, dtype=np.float32)
+    values = np.abs(values)
+    if len(values) >= 5:
+        kernel = np.ones(3, dtype=np.float32) / 3.0
+        values = np.convolve(values, kernel, mode="same").astype(np.float32)
+    value_min = float(values.min())
+    value_max = float(values.max())
+    if value_max - value_min <= 1e-12:
+        return np.ones_like(values, dtype=np.float32)
+    return np.clip((values - value_min) / (value_max - value_min), 0.0, 1.0).astype(np.float32)
+
+
+def load_device_response_curve(file_path: Path, accumulate: bool = False) -> np.ndarray:
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        excel_file = pd.ExcelFile(file_path)
+    run_sheet = next((name for name in excel_file.sheet_names if str(name).lower().startswith("run")), excel_file.sheet_names[0])
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        df = pd.read_excel(file_path, sheet_name=run_sheet)
+    if "DrainI" not in df.columns:
+        raise ValueError(f"Device response file {file_path} missing DrainI column.")
+    drain_i = pd.to_numeric(df["DrainI"], errors="coerce").dropna().to_numpy(dtype=np.float32)
+    curve = normalize_device_curve(drain_i)
+    if accumulate:
+        curve = np.maximum.accumulate(curve).astype(np.float32)
+    return curve
+
+
+def load_device_dynamics(data_dir: Path) -> Optional[dict[str, object]]:
+    try:
+        source_files = {
+            "epsc": find_first_existing_data_file(
+                data_dir,
+                ["EPSC-0.001-60-60.xls", "EPSC-0.002-60-60.xls"],
+                "EPSC*.xls",
+            ),
+            "ppf": find_first_existing_data_file(
+                data_dir,
+                ["PPF-0.001-60-60.xls", "PPF-0.0015-60-60.xls"],
+                "PPF*.xls",
+            ),
+            "ltp": find_first_existing_data_file(
+                data_dir,
+                ["LTP-0.001-1MS.xls", "LTP-0.001-30-60.xls"],
+                "LTP*.xls",
+            ),
+            "ltd": find_first_existing_data_file(
+                data_dir,
+                ["LTD-0.02-1MS.xls"],
+                "LTD*.xls",
+            ),
+        }
+        dynamics: dict[str, object] = {
+            "epsc_curve": load_device_response_curve(source_files["epsc"]),
+            "ppf_curve": load_device_response_curve(source_files["ppf"]),
+            "ltp_curve": load_device_response_curve(source_files["ltp"], accumulate=True),
+            "ltd_curve": load_device_response_curve(source_files["ltd"]),
+            "source_files": {key: str(value) for key, value in source_files.items()},
+        }
+        log(
+            "Loaded device dynamics: "
+            + ", ".join(f"{key}={Path(value).name}" for key, value in dynamics["source_files"].items())
+        )
+        return dynamics
+    except Exception as exc:
+        log(f"Device dynamics loading failed; continuing without measured dynamics. Reason: {exc}")
+        return None
+
+
+def build_device_noise_profile(device_dynamics: Optional[dict[str, object]], length: int = 64) -> Optional[np.ndarray]:
+    if device_dynamics is None:
+        return None
+    epsc = resample_curve_to_frames(np.asarray(device_dynamics["epsc_curve"], dtype=np.float32), length)
+    ppf = resample_curve_to_frames(np.asarray(device_dynamics["ppf_curve"], dtype=np.float32), length)
+    ltp = resample_curve_to_frames(np.asarray(device_dynamics["ltp_curve"], dtype=np.float32), length)
+    ltd = resample_curve_to_frames(np.asarray(device_dynamics["ltd_curve"], dtype=np.float32), length)
+    profile = 0.34 * epsc + 0.26 * ppf + 0.24 * ltp - 0.16 * ltd
+    return normalize_device_curve(profile)
+
+
 def apply_consistent_augmentation(window_frames: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     alpha = float(rng.uniform(0.92, 1.08))
     beta = float(rng.uniform(-0.05, 0.05))
@@ -423,17 +528,40 @@ def build_crossbar_window(
     hrs_values: np.ndarray,
     lrs_values: np.ndarray,
     seed: int,
+    device_dynamics: Optional[dict[str, object]] = None,
 ) -> np.ndarray:
     rng = np.random.default_rng(seed)
     epsc = EPSCModel()
     ppf = PPFModel()
+    if device_dynamics is not None:
+        num_frames = int(len(window_frames))
+        epsc_curve = resample_curve_to_frames(np.asarray(device_dynamics["epsc_curve"], dtype=np.float32), num_frames)
+        ppf_curve = resample_curve_to_frames(np.asarray(device_dynamics["ppf_curve"], dtype=np.float32), num_frames)
+        ltp_curve = resample_curve_to_frames(np.asarray(device_dynamics["ltp_curve"], dtype=np.float32), num_frames)
+        ltd_curve = resample_curve_to_frames(np.asarray(device_dynamics["ltd_curve"], dtype=np.float32), num_frames)
+    else:
+        epsc_curve = ppf_curve = ltp_curve = ltd_curve = None
     mapped_frames = []
-    for frame in window_frames:
+    prev_signal = float(np.mean(window_frames[0])) if len(window_frames) > 0 else 0.0
+    ltp_state = 0.0
+    for frame_index, frame in enumerate(window_frames):
         crossbar = image_to_crossbar_array(frame, hrs_values, lrs_values, rng)
         signal = float(np.mean(frame))
-        epsc_gain = epsc.step(signal)
-        ppf_gain = ppf.step(signal)
-        weighted = np.clip(crossbar * (0.75 + epsc_gain) * ppf_gain, 0.0, 1.0)
+        if device_dynamics is None:
+            epsc_gain = epsc.step(signal)
+            ppf_gain = ppf.step(signal)
+            weighted = np.clip(crossbar * (0.75 + epsc_gain) * ppf_gain, 0.0, 1.0)
+        else:
+            motion_delta = abs(signal - prev_signal)
+            ltp_state = max(ltp_state * 0.92, signal)
+            epsc_gain = 0.18 + 0.55 * float(epsc_curve[frame_index])
+            ppf_gain = 1.0 + 0.16 * float(ppf_curve[frame_index]) + 0.28 * math.tanh(motion_delta / 0.04)
+            ltp_gain = 0.92 + 0.20 * float(ltp_curve[frame_index]) * float(np.clip(ltp_state, 0.0, 1.0))
+            calmness = 1.0 - min(1.0, motion_delta / 0.08)
+            ltd_scale = 1.0 - 0.14 * float(ltd_curve[frame_index]) * calmness
+            device_jitter = rng.normal(1.0, 0.006, size=crossbar.shape)
+            weighted = np.clip(crossbar * (0.75 + epsc_gain) * ppf_gain * ltp_gain * ltd_scale * device_jitter, 0.0, 1.0)
+        prev_signal = signal
         mapped_frames.append(weighted.astype(np.float32))
     return np.stack(mapped_frames, axis=0)
 
@@ -1366,6 +1494,7 @@ class CombinedFallDataset(Dataset):
         pixel_grid_size: int,
         hrs_values: np.ndarray,
         lrs_values: np.ndarray,
+        device_dynamics: Optional[dict[str, object]],
         augment: bool,
         base_seed: int,
     ) -> None:
@@ -1380,6 +1509,7 @@ class CombinedFallDataset(Dataset):
         self.pixel_grid_size = pixel_grid_size
         self.hrs_values = hrs_values
         self.lrs_values = lrs_values
+        self.device_dynamics = device_dynamics
         self.augment = augment
         self.base_seed = base_seed
 
@@ -1419,7 +1549,13 @@ class CombinedFallDataset(Dataset):
             )
 
         if self.use_crossbar:
-            window_frames = build_crossbar_window(window_frames, self.hrs_values, self.lrs_values, sample_seed)
+            window_frames = build_crossbar_window(
+                window_frames,
+                self.hrs_values,
+                self.lrs_values,
+                sample_seed,
+                device_dynamics=self.device_dynamics,
+            )
 
         tensor = torch.from_numpy(window_frames[:, np.newaxis, :, :]).float()
         target = torch.tensor(label_id, dtype=torch.long)
@@ -1517,6 +1653,8 @@ def apply_student_noise(
     noise_std: float,
     noise_prob: float,
     frame_drop_prob: float,
+    noise_mode: str = "gaussian",
+    device_noise_profile: Optional[np.ndarray] = None,
 ) -> torch.Tensor:
     if noise_std <= 0 and frame_drop_prob <= 0:
         return batch_x
@@ -1527,7 +1665,20 @@ def apply_student_noise(
         < float(np.clip(noise_prob, 0.0, 1.0))
     ).to(batch_x.dtype)
     noisy = batch_x
-    if noise_std > 0:
+    if noise_mode == "device" and device_noise_profile is not None and len(device_noise_profile) > 0:
+        profile = resample_curve_to_frames(np.asarray(device_noise_profile, dtype=np.float32), time_steps)
+        profile = profile - float(profile.mean())
+        profile_tensor = torch.tensor(profile, device=batch_x.device, dtype=batch_x.dtype).view(1, time_steps, 1, 1, 1)
+        temporal_gain = 1.0 + apply_mask * profile_tensor * float(noise_std) * 2.5
+        spatial_jitter = 1.0 + apply_mask * torch.randn(
+            (batch_size, 1, 1, batch_x.size(-2), batch_x.size(-1)),
+            device=batch_x.device,
+            dtype=batch_x.dtype,
+        ) * float(noise_std) * 0.35
+        noisy = noisy * temporal_gain * spatial_jitter
+        gaussian = torch.randn_like(batch_x) * float(noise_std) * 0.45
+        noisy = noisy + gaussian * apply_mask
+    elif noise_std > 0:
         gaussian = torch.randn_like(batch_x) * float(noise_std)
         noisy = noisy + gaussian * apply_mask
     if frame_drop_prob > 0 and time_steps > 1:
@@ -1803,6 +1954,9 @@ def train_detector(
         np.array([0.1], dtype=np.float32),
         np.array([0.9], dtype=np.float32),
     )
+    device_dynamics = load_device_dynamics(args.data_dir) if (args.use_device_dynamics or args.student_noise_mode == "device") else None
+    crossbar_device_dynamics = device_dynamics if (use_crossbar and args.use_device_dynamics) else None
+    device_noise_profile = build_device_noise_profile(device_dynamics) if args.student_noise_mode == "device" else None
 
     train_dataset = CombinedFallDataset(
         video_windows=train_video_windows,
@@ -1816,6 +1970,7 @@ def train_detector(
         pixel_grid_size=args.pixel_grid_size,
         hrs_values=hrs_values,
         lrs_values=lrs_values,
+        device_dynamics=crossbar_device_dynamics,
         augment=True,
         base_seed=args.seed,
     )
@@ -1831,6 +1986,7 @@ def train_detector(
         pixel_grid_size=args.pixel_grid_size,
         hrs_values=hrs_values,
         lrs_values=lrs_values,
+        device_dynamics=crossbar_device_dynamics,
         augment=False,
         base_seed=args.seed + 9999,
     )
@@ -1905,6 +2061,8 @@ def train_detector(
                     noise_std=args.student_noise_std,
                     noise_prob=args.student_noise_prob,
                     frame_drop_prob=args.student_frame_drop_prob,
+                    noise_mode=args.student_noise_mode,
+                    device_noise_profile=device_noise_profile,
                 )
             logits = model(student_x)
             supervised_loss = criterion(logits, batch_y)
@@ -1934,6 +2092,8 @@ def train_detector(
                         noise_std=args.student_noise_std,
                         noise_prob=args.student_noise_prob,
                         frame_drop_prob=args.student_frame_drop_prob,
+                        noise_mode=args.student_noise_mode,
+                        device_noise_profile=device_noise_profile,
                     )
                 no_fall_logits = model(no_fall_student)
                 no_fall_probs = torch.softmax(no_fall_logits, dim=1)
@@ -2001,6 +2161,10 @@ def train_detector(
                     "image_size": args.image_size,
                     "hidden_dim": args.hidden_dim,
                     "use_crossbar": use_crossbar,
+                    "use_device_dynamics": bool(args.use_device_dynamics),
+                    "device_dynamics_sources": (
+                        crossbar_device_dynamics.get("source_files", {}) if crossbar_device_dynamics is not None else {}
+                    ),
                     "use_pixel_human": args.use_pixel_human,
                     "use_silhouette_human": args.use_silhouette_human,
                     "pixel_grid_size": args.pixel_grid_size,
@@ -2009,6 +2173,7 @@ def train_detector(
                     "max_aux_fall": args.max_aux_fall,
                     "skip_main_video_training": args.skip_main_video_training,
                     "teacher_student_noise": args.teacher_student_noise,
+                    "student_noise_mode": args.student_noise_mode,
                     "student_noise_std": args.student_noise_std,
                     "student_noise_prob": args.student_noise_prob,
                     "student_frame_drop_prob": args.student_frame_drop_prob,
@@ -2186,6 +2351,7 @@ def predict_video_frames(
     use_crossbar: bool,
     hrs_values: np.ndarray,
     lrs_values: np.ndarray,
+    device_dynamics: Optional[dict[str, object]],
     device: torch.device,
     batch_size: int,
     fall_prob_threshold: float = 0.0,
@@ -2207,7 +2373,13 @@ def predict_video_frames(
             for start in batch_starts:
                 window_frames = frames[start : start + window_size].copy()
                 if use_crossbar:
-                    window_frames = build_crossbar_window(window_frames, hrs_values, lrs_values, seed=10000 + start)
+                    window_frames = build_crossbar_window(
+                        window_frames,
+                        hrs_values,
+                        lrs_values,
+                        seed=10000 + start,
+                        device_dynamics=device_dynamics,
+                    )
                 batch_windows.append(window_frames[:, np.newaxis, :, :])
             batch_tensor = torch.from_numpy(np.stack(batch_windows, axis=0)).float().to(device)
             logits = model(batch_tensor)
@@ -3427,6 +3599,8 @@ def write_report_json(
         "image_size": int(config.get("image_size", args.image_size)),
         "infer_stride": int(config.get("infer_stride", args.infer_stride)),
         "use_crossbar": bool(config.get("use_crossbar", not args.disable_crossbar)),
+        "use_device_dynamics": bool(config.get("use_device_dynamics", args.use_device_dynamics)),
+        "device_dynamics_sources": config.get("device_dynamics_sources", {}),
         "use_pixel_human": bool(config.get("use_pixel_human", args.use_pixel_human)),
         "use_silhouette_human": bool(config.get("use_silhouette_human", args.use_silhouette_human)),
         "pixel_grid_size": int(config.get("pixel_grid_size", args.pixel_grid_size)),
@@ -3549,6 +3723,7 @@ def run_detection_inference(
     image_size = int(config.get("image_size", args.image_size))
     infer_stride = int(config.get("infer_stride", args.infer_stride))
     use_crossbar = bool(config.get("use_crossbar", not args.disable_crossbar))
+    use_device_dynamics = bool(config.get("use_device_dynamics", args.use_device_dynamics))
     use_pixel_human = bool(config.get("use_pixel_human", args.use_pixel_human))
     use_silhouette_human = bool(config.get("use_silhouette_human", args.use_silhouette_human))
     pixel_grid_size = int(config.get("pixel_grid_size", args.pixel_grid_size))
@@ -3556,6 +3731,7 @@ def run_detection_inference(
         np.array([0.1], dtype=np.float32),
         np.array([0.9], dtype=np.float32),
     )
+    device_dynamics = load_device_dynamics(args.data_dir) if (use_crossbar and use_device_dynamics) else None
 
     frames, fps = read_video_frames(
         video_path,
@@ -3573,6 +3749,7 @@ def run_detection_inference(
         use_crossbar=use_crossbar,
         hrs_values=hrs_values,
         lrs_values=lrs_values,
+        device_dynamics=device_dynamics,
         device=device,
         batch_size=max(1, args.batch_size),
         fall_prob_threshold=args.fall_prob_threshold,
@@ -3740,6 +3917,7 @@ def run_plasticity_analysis(
     image_size = int(config.get("image_size", args.image_size))
     infer_stride = int(config.get("infer_stride", args.infer_stride))
     use_crossbar = bool(config.get("use_crossbar", not args.disable_crossbar))
+    use_device_dynamics = bool(config.get("use_device_dynamics", args.use_device_dynamics))
     use_pixel_human = bool(config.get("use_pixel_human", args.use_pixel_human))
     use_silhouette_human = bool(config.get("use_silhouette_human", args.use_silhouette_human))
     pixel_grid_size = int(config.get("pixel_grid_size", args.pixel_grid_size))
@@ -3747,6 +3925,7 @@ def run_plasticity_analysis(
         np.array([0.1], dtype=np.float32),
         np.array([0.9], dtype=np.float32),
     )
+    device_dynamics = load_device_dynamics(args.data_dir) if (use_crossbar and use_device_dynamics) else None
 
     frames, fps = read_video_frames(
         args.video,
@@ -3764,6 +3943,7 @@ def run_plasticity_analysis(
         use_crossbar=use_crossbar,
         hrs_values=hrs_values,
         lrs_values=lrs_values,
+        device_dynamics=device_dynamics,
         device=device,
         batch_size=max(1, args.batch_size),
     )
