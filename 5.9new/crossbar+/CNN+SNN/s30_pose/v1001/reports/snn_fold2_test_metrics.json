@@ -1,0 +1,20 @@
+{
+  "arch": "SNN",
+  "fold": 2,
+  "protocol": "F1-max threshold on validation (tie -> higher threshold, cap 0.70)",
+  "val_threshold": 0.45,
+  "val_f1": 0.788732,
+  "val_fall_recall": 0.903226,
+  "val_adl_specificity": 0.6,
+  "threshold": 0.45,
+  "accuracy": 0.916667,
+  "balanced_accuracy": 0.916522,
+  "adl_specificity": 0.913043,
+  "fall_recall": 0.92,
+  "precision": 0.92,
+  "tp": 23,
+  "tn": 21,
+  "fp": 2,
+  "fn": 2,
+  "n": 48
+}
