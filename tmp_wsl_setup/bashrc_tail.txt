@@ -1,0 +1,3 @@
+
+[ -f ~/.bash_aliases ] && . ~/.bash_aliases
+export PATH=/root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
