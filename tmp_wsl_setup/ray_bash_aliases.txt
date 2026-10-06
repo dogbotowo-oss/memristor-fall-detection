@@ -1,0 +1,6 @@
+alias proj='cd /mnt/f/12.18-2'
+alias oc='opencode'
+alias cdx='codex'
+alias rx='reasonix'
+alias cc='claude'
+alias ai-check='node -v; npm -v; opencode --version; codex --version; reasonix --version; claude --version'

@@ -1,0 +1,321 @@
+[0] Abstract—The non-idealities of memristive devices, including conductance nonlinearity, readout noise, and weight drift, fundamentally constrain the accuracy of neuromorphic systems mapped onto crossbar arrays. This paper presents a device–algorithm co-design framework in which the measured characteristics of a high-entropy spinel ferrite (Ni₀.₃Cu₀.₂Zn₀.₅Co₀.₀₀₃Mn₀.₀₀₃Fe₁.₉₉₄)O₄ memristor are embedded into the training of a hybrid convolutional neural network–spiking neural network (CNN–SNN) for video-based fall detection. The device, fabricated by pulsed laser deposition in a Si/Pt/ferrite/Pt stack with film growth at 550 °C and subsequent annealing at 650 °C in Ar, exhibits stable bipolar resistive switching over 100 I–V cycles, a high-/low-resistance-state ratio of 7.5 × 10³, and long-term potentiation/depression and excitatory postsynaptic current dynamics. Synaptic weights are mapped onto a simulated crossbar parameterized by the measured HRS/LRS conductance distributions and LTP/LTD/EPSC kinetics, with readout noise injected during training together with a teacher–student consistency mechanism. Under a four-fold LOSO protocol, the full model achieves a macroaveraged balanced accuracy of 81.88%, outperforming the noSNN baseline by 19.33 percentage points (with a 31.10point improvement in fall recall). Independent noise injection tests on S4 demonstrate that a recall of 88% is still maintained under 5% fullscale readout noise, with performance degrading gracefully up to 15% noise, indicating that embedding device physics enables robust inmemory edge inference.
+
+[1] Index Terms—Device–algorithm co-design, high-entropy ferrite, in-memory computing, memristive crossbar, neuromorphic circuits, spiking neural network.
+
+[2] 
+
+[3] 
+
+[4] 
+
+[5] 
+
+[6] Introduction
+
+[7] Neuromorphic computing aims to emulate the structural and functional principles of biological neural systems, offering a promising pathway toward energy-efficient and highly parallel information processing [3,4]. At the heart of this paradigm lies the artificial synapse, whose plasticity—the ability to modulate connection strength in response to activity—is fundamental to learning and memory. Memristive devices have emerged as compelling candidates for electronic synapses because their history-dependent conductance and pulse-driven dynamics mirror the integrative and plastic behavior of biological synapses [1,2]. Among various memristive technologies, filamentary resistive-switching devices are particularly attractive: the field-driven evolution of a conductive filament resembles membrane-potential integration, threshold switching corresponds to spike generation, and spontaneous relaxation emulates leakage and forgetting. High-entropy oxides, with their multi-cation lattices that stabilize switching behavior and moderate ion migration, provide a materials platform to engineer such dynamics [7].
+
+[8] Falls are one of the most common causes of injury across all age groups, particularly among the elderly, often leading to severe physical trauma and functional decline. Video-based automatic fall detection has become a key enabling technology for intelligent surveillance and assisted-care systems [5] A fall, however, is intrinsically a temporal event: its pre-fall phase frequently shares motion primitives—bending, crouching, or sitting down—with activities of daily living (ADLs), so single-frame appearance cues or short-term local motion are easily confused between the two classes. Reliable detection therefore requires models that capture long-range temporal dynamics in addition to spatial appearance.
+
+[9] 
+
+[10] While CNNs with GRUs capture spatial and short-term temporal features, they struggle with abrupt long-range transitions. Spiking neural networks (SNNs) [4], with their event-driven dynamics, are naturally suited to model such temporal events on neuromorphic hardware [3].
+
+[11] 
+
+[12] On the hardware side, memristive crossbar arrays perform multiply–accumulate operations directly where the weights are stored, offering a promising route toward in-memory neuromorphic inference that circumvents the von Neumann bottleneck [6]. Memristive devices have been widely demonstrated as artificial synapses with history-dependent conductance and pulse-driven plasticity [1,2]. In practice, however, device non-idealities—including a finite conductance window, nonlinear weight update, readout noise, and state drift—degrade the accuracy of networks mapped onto such arrays. Device characterization and network training are still frequently developed in isolation, and models trained under ideal-weight assumptions may fail once evaluated under realistic device behavior through the crossbar mapping. This motivates a device–algorithm co-design flow in which measured device physics is embedded into training rather than treated as a post hoc perturbation. This requires that the training procedure accounts for device variability at the level of both weight mapping and temporal dynamics, rather than treating the crossbar as an ideal compute substrate.
+
+[13] 
+
+[14] Filamentary resistive-switching devices are particularly attractive in this context because their abrupt threshold-switching behavior aligns naturally with the event-driven firing mechanism of spiking neurons: the field-driven growth of a conductive filament resembles membrane-potential integration, the threshold-triggered conductance transition corresponds to spike generation, and the spontaneous relaxation of the filament after stimulus removal emulates leakage and forgetting. High-entropy oxides, whose multi-cation lattice can stabilize switching behavior and moderate ion-migration paths, provide a materials platform to engineer such dynamics.[7] In this work we employ a high-entropy spinel ferrite, (Ni₀.₃Cu₀.₂Zn₀.₅Co₀.₀₀₃Mn₀.₀₀₃Fe₁.₉₉₄)O₄, grown by pulsed laser deposition (PLD), which exhibits stable bipolar resistive switching over 100 I–V cycles, a high-/low-resistance-state ratio of  7.5 × 10³, and long-term potentiation/depression (LTP/LTD) together with excitatory postsynaptic current (EPSC) responses.
+
+[15] 
+
+[16] 
+
+[17] The main contributions of this work are summarized as follows. 1) A Si/Pt/NCZFO/Pt memristor is fabricated by PLD and electrically characterized, yielding measured HRS/LRS conductance distributions and LTP/LTD/EPSC kinetics. To the best of our knowledge, this is the first attempt to incorporate measured device data of NCZFO into a device-aware training framework. 2) A pose-event-driven LIF-SNN temporal branch is designed, taking 15-dimensional pose kinematic features as input—including the height, vertical displacement, vertical velocity, head acceleration, and validity flags of the head, shoulder, and hip keypoints along with the centroid coordinates of these keypoints—which are projected through linear layers into a group of LIF neurons with learnable decay and threshold parameters and surrogate gradient training. This branch is fused with CNN–GRU spatial features via a group-channel dual gating mechanism with a floor constraint and an ADL gate penalty, achieving selective fusion that maintains ADL specificity while improving fall recall. 3) A device–algorithm co-training scheme is established, mapping synaptic weights onto a simulated crossbar parameterized by measured HRS/LRS distributions, with readout noise and teacher–student consistency injected during training to ensure robustness against crossbar non-idealities. 4) Under a strict four-fold LOSO protocol, a no-SNN ablation quantifies the SNN branch contribution (+19.33 percentage points in balanced accuracy), and inference-stage noise injection confirms graceful performance degradation up to 15% full-scale readout noise.
+
+[18] 
+
+[19] The remainder of this paper is organized as follows. Section II describes the device fabrication and characterization. Section III presents the electrical and synaptic properties. Section IV introduces the algorithm and its application to image recognition. Finally, Section V concludes the paper.
+
+[20] 
+
+[21] 
+
+[22] 
+
+[23] 
+
+[24] 
+
+[25] II.  Device Fabrication and Characterization
+
+[26] The memristive device was fabricated in a Si/Pt/NCZFO/Pt stack. A 100-nm-thick Pt bottom electrode was DC magnetron sputtered on Si. A self-pressed Ni–Cu–Zn ferrite target ( Ni:Cu:Zn = 0.3:0.2:0.5) was co-doped with Co and Mn (⟪CoxMnxFe2-2x⟫, ⟪x=0.003⟫), thereby yielding the high-entropy spinel phase with a nominal composition of ⟪Ni0.3Cu0.2Zn0.5Co0.003Mn0.003Fe1.994O4⟫(NCZFO). The film was grown at 550 °C and 2 Pa using a 200 mJ laser at 3Hz for 4h, giving the thickness of ~300 nm, and then annealed at 650 °C for 2 h in Ar. Finally, 100-nm dot-shaped Pt top electrodes were deposited to complete the Si/Pt(100 nm)/NCZFO(~300 nm)/Pt(100 nm) stack.
+
+[27] The crystallographic structure of the NCZFO film was examined by X-ray diffraction (XRD). The diffraction peaks can be indexed to a spinel ferrite phase, confirming the formation of the intended NCZFO. Scanning electron microscopy (SEM) images reveal a dense and crack-free surface with clearly visible grains and distinct grain boundaries, indicating good crystallinity of the film. EDS/XPS further confirm the presence and chemical states of Ni, Cu, Zn, Co, Mn, Fe, and O. These results confirm the quality of the NCZFO film and provide the material basis for the measured bipolar resistive switching and synaptic dynamics
+
+[28] [待图补充：XRD 峰位、晶粒尺寸、SEM 表面形貌、EDS/XPS 元素比例等具体描述。]
+
+[29] 
+
+[30] 
+
+[31] 
+
+[32] 
+
+[33] 
+
+[34] 
+
+[35] `
+
+[36] 
+
+[37] III.  Electrical and Synaptic Properties
+
+[38] The electrical characteristics were measured using a Keysight 1500B semiconductor parameter analyzer. Figure X(a) shows a typical bipolar I–V curve of the Si/Pt/NCZFO/Pt device, exhibiting reproducible SET and RESET transitions. The device maintains stable bipolar resistive switching over 100 consecutive I–V cycles, as shown in Fig. X(b). The HRS/LRS ratio reaches ≈7.5 × 10³ at a read voltage of 0.1 V, with a best-case ratio exceeding 10⁵. The SET and RESET voltages are approximately +2.1 V and −1.0 V, respectively. Over 100 consecutive switching cycles, the coefficients of variation (Cv = σ/μ) for HRS and LRS were 9.7% and 7.6%, respectively, indicating stable resistance states. The switching voltages show moderate cycle-to-cycle variation, which is typical for filamentary memristors, but this does not degrade the HRS/LRS separation or the retention characteristic
+
+[39] [待图补充：循环分散度、HRS/LRS 分布宽度、开关比均匀性等分析。]
+
+[40] 肖特基拟合-还未画图To clarify the charge-transport mechanism in the HRS, the measured I–V data were fitted with the Schottky-emission model. For Schottky emission, the current density follows ⟪J∝T2exp⁡-qΦB-qE/4πε/kT⟫, so that ⟪ln⁡I/T2⟫versus ⟪V⟫is expected to be linear at a fixed temperature. As shown in Fig. Z, the HRS current exhibits a good linear fit with 待补：, suggesting that the high-resistance-state transport is dominated by interface-limited Schottky emission at the Pt/NCZFO interface.
+
+[41] [待图补充：拟合区间、温度条件、与其他机制（SCLC、Poole–Frenkel 等）的对比。]
+
+[42] ZH:为阐明 HRS 下的电荷输运机制，对实测 I–V 数据进行了肖特基发射拟合。肖特基发射的电流密度满足 ⟪J∝T2exp⁡-qΦB-qE/4πε/kT⟫，因此在固定温度下，⟪ln⁡I/T2⟫ 与 ⟪V⟫应呈线性关系。如图 Z 所示，HRS 电流的线性拟合度 待补：，表明高阻态输运主要受 Pt/NCZFO 界面限制的肖特基发射主导。[待图补充：拟合区间、温度条件、与其他机制（SCLC、Poole–Frenkel 等）的对比。]
+
+[43] Synaptic plasticity was characterized using a Keysight WGFMU module. A train of 1-ms stepped voltage pulses was applied to the NCZFO device. As shown in Fig. W(a), the conductance increases monotonically under potentiation pulses and decreases monotonically under depression pulses. Both updates are approximately linear with pulse number, demonstrating analog-like, symmetric weight modulation suitable for in-situ training, with only mild nonlinearity in the depression branch at high pulse counts. Figure W(b) shows the EPSC response of the NCZFO device to a single 1-ms voltage pulse. The current rises rapidly upon pulse application and remains nearly constant during the pulse. After pulse removal, most of the current vanishes quickly as a transient (capacitive) component, while the remaining current persists without noticeable decay over the post-pulse window, indicating that the pulse permanently reconfigures the device conductance. The device therefore behaves as a fast-switching, non-volatile analog memory with no intrinsic short-term relaxation tail; all temporal dynamics required for event-driven computation must be supplied externally, making it a promising candidate for non-volatile synaptic weights in spiking neural networks (SNNs).
+
+[44] Because the device itself provides no intrinsic temporal relaxation, we introduce spiking neurons with leaky integrate-and-fire dynamics to embed time into the network: the measured EPSC, LTP and LTD curves were resampled to the frame level to construct the device-kinetic gain ⟪rt∈01⟫ so that the effective weight follows ⟪Weff,t=Wrt⟫. The CNN frontend extracts spatial features, while the SNN layer supplies the temporal integration-and-leak kinetics that the NCZFO device lacks; in this way the measured device nonlinearity, finite dynamic range and step-like switching kinetics directly modulate the weight update during training.
+
+[45] [待图补充：LTP/LTD 线性度、动态范围、EPSC 衰减时间常数等具体分析。]The measured HRS/LRS distributions and the LTP/LTD/EPSC kinetics were used directly to parameterize the simulated crossbar in Section IV.
+
+[46] 
+
+[47] IV Algorithm and Application to Image Recognition
+
+[48] The input video is partitioned into non-overlapping temporal windows of ⟪T=16⟫consecutive frames, each converted to grayscale and resized to ⟪64×64⟫. The CNN encoder comprises four convolutional stages with a channel progression of ⟪1→16→32→64→96⟫. Every stage applies a convolution followed by batch normalization and a ReLU nonlinearity, and the final stage is reduced by adaptive average pooling to a ⟪2×2⟫map, which is flattened and linearly projected to a ⟪d=64⟫-dimensional feature sequence ⟪zt⟫. A bidirectional gated recurrent unit (GRU) then integrates the sequence:
+
+[49] ⟪zt=ReLUBNConvxt, t=1,…,T(1)⟫⟪ht=GRUztht-1(2)⟫⟪fCNN,t=htht(3)⟫
+
+[50] where ⟪xt⟫is the ⟪t⟫-th frame; BN and Conv denote batch normalization and convolution, respectively; ⟪ht⟫and ⟪ht⟫are the forward and backward GRU hidden states; and ⟪fCNN,t⟫is the bidirectional concatenated backbone temporal feature.
+
+[51] ZH:输入视频被划分为 ⟪T=16⟫连续帧的非重叠时间窗，每帧转为灰度并缩放到 ⟪64×64⟫。CNN 编码器包含四个卷积阶段，通道数依次为 ⟪1→16→32→64→96⟫。每个阶段依次施加卷积、批归一化与 ReLU 非线性，末阶段经自适应平均池化降为 ⟪2×2⟫特征图，展平后线性投影为 ⟪d=64⟫维特征序列 ⟪zt⟫，再由双向门控循环单元（GRU）进行时序积分：
+
+[52] ⟪zt=ReLUBNConvxt, t=1,…,T(1)⟫⟪ht=GRUztht-1(2)⟫⟪fCNN,t=htht(3)⟫
+
+[53] 其中 ⟪xt⟫为第 ⟪t⟫帧，BN 与 Conv 分别表示批归一化与卷积；⟪ht⟫ 与 ⟪ht⟫为前向与反向 GRU 隐状态，⟪fCNN,t⟫ 为双向拼接后的主干时序特征。
+
+[54] The SNN branch receives 15-dimensional kinematic features per frame: seven global motion statistics plus eight pose displacement features, namely the centroid height ⟪y⟫, vertical displacement, vertical velocity of the head, shoulder and hip keypoints, the head acceleration, and the pose-validity flag. Keypoints are extracted offline from the RGB videos using MediaPipe; a validity flag accompanies each frame to indicate detection confidence, so that occluded or missing keypoints do not inject spurious dynamics. The features are projected by two linear layers (hidden width 32) into the input current ⟪It⟫of a population of LIF neurons. The membrane potential ⟪ut⟫evolves according to the discrete-time LIF dynamics:
+
+[55] ⟪ut=αut-1+It-vthst-1(4)⟫⟪st=Hut-vth(5)⟫
+
+[56] where ⟪α⟫is the membrane potential decay coefficient, ⟪vth⟫is the firing threshold, ⟪st∈01⟫is the spike output, and ⟪H⋅⟫is the Heaviside step function. This equation corresponds to the biological integrate–leak–fire process: input-current integration corresponds to charge injection from presynaptic spikes, the ⟪α⟫term corresponds to membrane leakage, and crossing the threshold triggers a spike and immediate reset (subtracting ⟪vth⟫).
+
+[57] Unlike conventional LIF models with fixed parameters, ⟪α⟫and ⟪vth⟫are learnable and are parameterized in bounded logit form to guarantee stability: ⟪α=σwα0.99-0.05+0.05⟫and ⟪vth=σwv1.25-0.05+0.05⟫, with ⟪wα⟫and ⟪wv⟫optimized by backpropagation; the decay is initialized to ⟪α=0.82⟫and the threshold to ⟪vth=0.55⟫. Because ⟪H⋅⟫is non-differentiable, training uses a surrogate gradient: the backward pass replaces ⟪∂st/∂ut⟫with a scaled arctangent kernel, e.g. ⟪∂st/∂ut≈(1π(ζ1+ζut-vth2⟫, with a surrogate scale ⟪ζ⟫corresponding to a temperature of 8.0, which permits end-to-end gradient flow through the discrete spike trains.Please verify the exact surrogate-gradient expression against your code; the formula in the revised file appears corrupted.
+
+[58] SNN 支路每帧接收 15 维运动学特征：7 维全局运动统计量与 8 维姿态位移特征，即头部、肩部、髋部关键点的质心高度 ⟪y⟫、垂直位移、垂直速度，以及头部加速度和姿态有效标志。关键点由 MediaPipe 从 RGB 视频离线提取；每帧附带有效标志以指示检测置信度，避免遮挡或缺失关键点注入虚假动态。特征经两层线性映射（隐藏宽度 32）转化为 LIF 神经元群的输入电流 ⟪It⟫。膜电位 ⟪ut⟫按离散时间 LIF 动力学演化：
+
+[59] ⟪ut=αut-1+It-vthst-1(4)⟫⟪st=Hut-vth(5)⟫
+
+[60] 其中 ⟪α⟫为膜电位衰减系数，⟪vth⟫ 为发放阈值，⟪st∈01⟫ 为脉冲输出，⟪H⋅⟫ 为 Heaviside 阶跃函数。该式对应生物突触的“积分—泄漏—发放”过程：输入电流积分对应突触前脉冲的电荷注入，⟪α⟫ 项对应膜电位泄漏，越过阈值触发脉冲并即刻复位（扣减 ⟪vth⟫）。
+
+[61] 与传统固定参数 LIF 模型不同，⟪α⟫ 与 ⟪vth⟫均为可学习参数，并采用有界 logit 参数化以保证稳定性：⟪α=σwα0.99-0.05+0.05⟫，⟪vth=σwv1.25-0.05+0.05⟫，⟪wα⟫ 与 ⟪wv⟫由反向传播优化；衰减系数初值 ⟪α=0.82⟫，阈值初值 ⟪vth=0.55⟫。由于 ⟪H⋅⟫不可微，训练采用代理梯度：反向传播中以缩放反正切核替代 ⟪∂st/∂ut⟫，例如 ⟪∂st/∂ut≈(1π(ζ1+ζut-vth2⟫，代理尺度 ⟪ζ⟫对应温度 8.0，从而使梯度得以穿越离散脉冲序列进行端到端回传。请根据代码核对代理梯度的精确表达式；修订文件中该公式疑似有 OCR 错误。
+
+[62] A dedicated binary classification head (snn_class_head) is attached to the LIF population. It serves two purposes: it applies direct supervision to the temporal branch so that the spiking representation remains class-discriminative even before fusion, and it provides an independent late-fusion output path used for ablation diagnostics.
+
+[63] LIF 神经元群上接有专门的二分类头（snn_class_head），其用途有二：其一，对时序支路施加直接监督，使脉冲表示在融合之前即保持类别可区分性；其二，提供独立的晚期融合输出路径，用于消融诊断。
+
+[64] Algorithm 1 (SNN branch forward pass).Input: frame window ⟪xtt=1..T⟫; pose features ⟪ptt=1..T⟫.
+
+[65] Compute the CNN-GRU feature sequence ⟪fCNN,t⟫via (1)–(3).
+
+[66] For ⟪t=1⟫to ⟪T⟫: project ⟪pt⟫to ⟪It⟫by two linear layers; update the LIF membrane potential and emit spikes via (4)–(5); aggregate the spiking activity into an event score ⟪qt⟫.
+
+[67] Convert ⟪qt⟫to a gated coefficient ⟪gt⟫via (6)–(7).
+
+[68] Fuse the branches via (8) and produce the fused prediction ⟪y⟫; the snn_class_head additionally outputs ⟪ysnn⟫for direct supervision.Output: video-level fall/ADL prediction.
+
+[69] 算法 1（SNN 支路前向过程）。输入：帧窗 ⟪xtt=1..T⟫；姿态特征 ⟪ptt=1..T⟫。
+
+[70] 经式(1)–(3)计算 CNN-GRU 特征序列 ⟪fCNN,t⟫。
+
+[71] 对 ⟪t=1⟫至 ⟪T⟫：经两层线性映射将 ⟪pt⟫投影为 ⟪It⟫；按式(4)–(5)更新 LIF 膜电位并发放脉冲；将脉冲活动聚合为事件评分 ⟪qt⟫。
+
+[72] 经式(6)–(7)将 ⟪qt⟫转换为门控系数 ⟪gt⟫。
+
+[73] 按式(8)融合两支路并输出融合预测 ⟪y⟫；snn_class_head 另输出 ⟪ysnn⟫用于直接监督。输出：视频级跌倒/ADL 判定。
+
+[74] 
+
+[75] 2.3 Event-Aware Group-Channel Gated Fusion / 事件感知组-通道门控融合
+
+[76] EN:Because the pre-fall phase shares motion primitives with ordinary activities of daily living (ADLs), the SNN evidence must be allowed to modulate the backbone only when the pose dynamics genuinely indicate a fall-like event. The spiking activity of the LIF population is therefore converted into an event score ⟪qt⟫, which is mapped to a soft gate:
+
+[77] ⟪gt=sigmoidkqt-q0(6)⟫⟪gt←max⁡gtgfloor, k=10, q0=0.55, gfloor=0.2(7)⟫
+
+[78] where ⟪k=10⟫controls the gate sharpness, and ⟪q0=0.55⟫is the event bias. To prevent the SNN branch from being completely shut down in early training and thereby interrupting gradients, a lower bound of 0.2 (floor) is imposed on the gate, ensuring a minimum level of information exchange between the two branches.
+
+[79] Fusion is performed at two granularities: a group gate ⟪Ggroup⋅⟫partitions the backbone channels into three groups (bias initialized to ⟪-0.5⟫), and a channel gate ⟪Gchannel⋅⟫provides fine-grained per-channel modulation (bias initialized to ⟪-1.0⟫). The fused feature is
+
+[80] ⟪ft=fCNN,t+GgroupfCNN,tGchannelfCNN,t(gt⋅fSNN,t(8)⟫
+
+[81] where ⟪⟫denotes element-wise multiplication. The gate floor and the ADL gate penalty (see Eq. (9)) jointly ensure that the SNN branch is sufficiently released on fall samples to improve recall, while being suppressed on ADL samples to reduce false alarms.
+
+[82] ZH:由于跌倒前兆阶段与日常活动（ADL）共享运动基元，仅当姿态动态真正指示类跌倒事件时，方允许 SNN 证据对主干进行调制。为此，将 LIF 神经元群的脉冲活动转换为事件评分 ⟪qt⟫，并经软门函数映射为门控系数：
+
+[83] ⟪gt=sigmoidkqt-q0(6)⟫⟪gt←max⁡gtgfloor, k=10, q0=0.55, gfloor=0.2(7)⟫
+
+[84] 其中 ⟪k=10⟫控制门控锐度，⟪q0=0.55⟫ 为事件偏置。为防止训练早期 SNN 支路被完全关闭导致梯度中断，对门控施加 0.2 的下限约束（floor），保证两支路始终保持最低限度的信息交换。
+
+[85] 融合在两个粒度上进行：组门控 ⟪Ggroup⋅⟫将主干通道划分为三组（偏置初值 ⟪-0.5⟫），通道门控 ⟪Gchannel⋅⟫提供逐通道细粒度调制（偏置初值 ⟪-1.0⟫）。融合特征为：
+
+[86] ⟪ft=fCNN,t+GgroupfCNN,tGchannelfCNN,t(gt⋅fSNN,t(8)⟫
+
+[87] 其中 ⟪⟫表示逐元素乘法。门控下限与 ADL 门控惩罚（见式(9)）共同保证：SNN 支路在跌倒样本上充分放行以提升召回，在 ADL 样本上受到抑制以降低误报。
+
+[88] 
+
+[89] 2.4 Memristive Crossbar Weight Mapping and Device Modeling / 忆阻 Crossbar 权重映射与器件建模
+
+[90] EN:To close the device–algorithm loop, synaptic weights are mapped onto a simulated crossbar parameterized entirely by measured device data. Each signed weight ⟪W⟫is realized by a differential conductance pair, so that the read current under input voltage vector ⟪V⟫is
+
+[91] ⟪I=G+-G-V(9)⟫
+
+[92] where ⟪G+⟫and ⟪G-⟫are sampled from the measured HRS.csv and LRS.csv conductance distributions, respectively, thereby directly injecting device-to-device and cycle-to-cycle fluctuations into the weight mapping process. This differential structure is equivalent to the excitatory/inhibitory dual pathway of biological synapses and is naturally compatible with the physical constraint that unipolar memristive conductance can only take positive values.
+
+[93] Beyond static conductance variability, temporal device physics is embedded as a dynamic gain. The measured EPSC, LTP and LTD curves are resampled to the frame level to construct a device-kinetic gain ⟪rt∈01⟫; the effective weight follows ⟪Weff,t=Wrt⟫, so that the magnitude of the weight update during training is modulated by the measured relaxation dynamics of the NCZFO device. PPF data being unavailable, ⟪rt⟫uses the neutral constant 0.5 as an explicitly marked placeholder.
+
+[94] Crossbar non-idealities are further injected as readout noise during training:
+
+[95] ⟪Wnoisy=Weff,t+ϵ, ϵ∼N0σtrain2, σtrain=0.25⟫
+
+[96] (full-scale normalized). At inference, a separate noise-sweep protocol varies ⟪σ⟫to probe robustness; all reported robustness numbers use a frozen threshold with no re-tuning.
+
+[97] ZH:为闭合“器件–算法”回路，突触权重被映射到完全由实测器件数据参数化的模拟 Crossbar 上。每个带符号权重 ⟪W⟫由差分电导对实现，在输入电压向量 ⟪V⟫下的读出电流为：
+
+[98] ⟪I=G+-G-V(9)⟫
+
+[99] 其中 ⟪G+⟫与 ⟪G-⟫分别从实测 HRS.csv 与 LRS.csv 的电导分布中逐次采样获得，从而将器件间与循环间涨落直接注入权重映射过程。该差分结构等效于生物突触的兴奋/抑制双通路，且天然兼容单极性忆阻电导只能取正值的物理约束。
+
+[100] 除静态电导涨落外，器件时间物理以动态增益形式嵌入：实测 EPSC、LTP 与 LTD 曲线重采样至帧级，构造器件动力学增益 ⟪rt∈01⟫；有效权重满足 ⟪Weff,t=Wrt⟫，使训练过程中的权重更新幅度受 NCZFO 器件实测弛豫动力学调制。由于 PPF 数据暂缺，⟪rt⟫ 中以中性常数 0.5 占位并明确标注。
+
+[101] 进一步在训练期以读出噪声形式注入 Crossbar 非理想性：
+
+[102] ⟪Wnoisy=Weff,t+ϵ, ϵ∼N0σtrain2, σtrain=0.25⟫
+
+[103] （满量程归一化）。推理阶段采用独立的噪声扫描协议变化 ⟪σ⟫以探测鲁棒性；所有鲁棒性结果均在阈值冻结、无任何重新调节的条件下获得。
+
+[104] The total training objective combines five terms:
+
+[105] ⟪L=Lcls+λcLcons+λgLgate+λaLADL+λmLmargin(10)⟫
+
+[106] where ⟪Lcls⟫is the binary classification loss on the fused output (with an additional supervisory term on the snn_class_head); ⟪Lcons⟫is a teacher–student consistency loss in which the teacher is an exponential moving average (EMA) of the student weights and its ramp-in weight stabilizes training under injected noise; ⟪Lgate⟫regularizes the group–channel gates toward parsimonious use of the SNN branch; ⟪LADL⟫is an ADL false-trigger penalty that suppresses gate activation on ADL samples (weight 0.06); and ⟪Lmargin⟫is a fall-preserve margin loss (weight 0.3, margin 0.5) that prevents ADL false-alarm suppression from eroding fall recall.
+
+[107] The training recipe is as follows. The network is warm-started from a pretrained v7 checkpoint; the CNN and GRU modules are frozen for the first two epochs while the SNN branch and gates converge, after which global fine-tuning proceeds with early stopping. Hard-negative ADL mining retains the top 12% of ADL samples ranked by loss with a focusing factor ⟪γ=2.0⟫, and Zenodo ADL context augmentation enriches the negative distribution. Training and all ablations share an identical configuration (seed 11; identical data splits, warm-start, and device non-idealities), so that the only difference between the full model and the no-SNN ablation is the removal of the SNN branch together with its dedicated gates and loss terms.
+
+[108] ZH:总训练目标由五项损失构成：
+
+[109] ⟪L=Lcls+λcLcons+λgLgate+λaLADL+λmLmargin(10)⟫
+
+[110] 其中 ⟪Lcls⟫为融合输出的二分类损失（并对 snn_class_head 附加监督项）；⟪Lcons⟫ 为教师–学生一致性损失，教师由学生权重的指数滑动平均（EMA）构成，其渐进升温权重用于稳定含噪训练；⟪Lgate⟫ 约束组–通道门控对 SNN 支路的调用趋于精简；⟪LADL⟫ 为 ADL 误触发惩罚，抑制门控在 ADL 样本上的激活（权重 0.06）；⟪Lmargin⟫ 为跌倒保护边际损失（权重 0.3，边际 0.5），防止压制 ADL 误报时侵蚀跌倒召回。
+
+[111] 训练配方如下：网络由预训练 v7 检查点热启动；前两轮冻结 CNN 与 GRU 模块，待 SNN 支路与门控收敛后再进行全局微调并早停。难负例 ADL 挖掘按损失保留排名前 12% 的 ADL 样本，聚焦因子 ⟪γ=2.0⟫，并以 Zenodo ADL 上下文增强充实负样本分布。训练与全部消融采用完全一致的配置（种子 11；相同的数据划分、热启动与器件非理想性），从而保证完整模型与 no-SNN 消融之间的唯一差异是移除 SNN 支路及其专属门控与损失项。
+
+[112] 
+
+[113] 2.6 Evaluation Protocol / 评估协议
+
+[114] EN:A strict four-fold leave-one-subject-out (LOSO) protocol is used on GMDCSA24: in each fold, one subject is held out as the test set, the remaining subjects together with the Zenodo training split are used for training, and the Zenodo validation split is used exclusively for threshold selection. The operating threshold is chosen on validation data only under the validation balanced-accuracy rule (threshold capped at 0.70) and is then frozen; the held-out subject is evaluated exactly once, which eliminates any threshold leakage. Two auxiliary protocols (zenodo_only and recall_priority) are retained for audit and sensitivity analysis.
+
+[115] Four metrics are reported: Accuracy; Balanced Accuracy ⟪=TPR+TNR/2⟫, where TPR is the fall recall and TNR the ADL specificity; ADL Specificity; and Fall Recall. Results are aggregated as macro-averages with sample standard deviations across the four folds, complemented by a pooled out-of-fold confusion matrix over all 160 held-out videos.
+
+[116] ZH:在 GMDCSA24 上采用严格的四折留一被试（LOSO）协议：每折留出一名被试作为测试集，其余被试与 Zenodo 训练集用于训练，Zenodo 验证集专用于阈值选择。工作阈值仅在验证数据上按验证平衡准确率规则（阈值上限 0.70）选取后冻结；留出被试仅评估一次，从根本上杜绝阈值泄漏。另保留 zenodo_only 与 recall_priority 两套辅助协议用于审计与敏感性分析。
+
+[117] 报告四项指标：准确率；平衡准确率 ⟪=TPR+TNR/2⟫，其中 TPR 为跌倒召回率，TNR 为 ADL 特异度；ADL 特异度；跌倒召回率。结果以四折宏平均及样本标准差汇总，并辅以全部 160 个留出视频的 pooled 出折混淆矩阵。
+
+[118] 
+
+[119] 3 Experimental design
+
+[120] 实验使用 GMDCSA24 和 Zenodo fall 数据。v1000 采用四折 LOSO，每次留出一个 GMDCSA 被试作测试集，其余被试和 Zenodo train 用于训练，Zenodo val 用于阈值选择，留出被试仅作一次最终评估。no-SNN 保留 CNN-GRU 和相同 Crossbar 器件条件，仅移除 SNN 分支、专属门控及相关损失。
+
+[121] 指标
+
+[122] no-SNN
+
+[123] SNN
+
+[124] 提升
+
+[125] Accuracy
+
+[126] 62.62±11.05%
+
+[127] 82.12±7.45%
+
+[128] +19.49 pp
+
+[129] Balanced Accuracy
+
+[130] 62.55±10.71%
+
+[131] 81.88±7.72%
+
+[132] +19.33 pp
+
+[133] ADL specificity
+
+[134] 81.97±15.34%
+
+[135] 89.53±8.02%
+
+[136] +7.56 pp
+
+[137] Fall recall
+
+[138] 43.12±21.46%
+
+[139] 74.22±12.17%
+
+[140] +31.10 pp
+
+[141] 表 1 v1000 四折 LOSO 宏平均结果
+
+[142] 4 Results and discussion
+
+[143] 完整模型在四项指标上均高于 no-SNN 基线，其中跌倒召回率提升最大，说明姿态事件特征为跌倒瞬间提供了 CNN-GRU 难以充分表达的动态线索。四折平衡准确率差值均为正，表明该趋势未由单一测试被试贡献。该结果支持方法有效性，但由于本文尚未完成统计显著性检验，不能将提升表述为统计显著。v999 的 seed 11 结果为 data1 条件下的 Subject4 独立测试，阈值从 Subject3 与 Zenodo val 选择后冻结；它与 v1000 LOSO 结果承担不同的验证目的，不能合并计算。
+
+[144] 5 Figures and pending experiments
+
+[145] 
+
+[146] 图 1 现有流程图占位。需按最新算法补充姿态输入、LIF-SNN、group-channel 门控和 Crossbar 动态建模。
+
+[147] 图 2 和图 3 分别对应 no-SNN 与 SNN 性能对比以及 SNN - no-SNN 提升柱状图。Gaussian、Salt/Pepper 和 Poisson 输入噪声实验正在重新运行，旧 PPT 噪声图不纳入本文结论。材料部分需要补充基底、沉积温度、激光参数、膜厚、器件尺寸及表征原始数据。
+
+[148] 6 Conclusion
+
+[149] 本文建立了面向忆阻器 Crossbar 的 CNN-SNN 混合跌倒检测方法。CNN-GRU 提取视觉空间和浅层时序特征，姿态事件驱动的 LIF-SNN 分支补充跌倒动态证据，group-channel 门控控制时序信息对主干决策的影响。v1000 四折 LOSO 结果显示，完整模型较 CNN-GRU no-SNN 基线在四项指标上均取得正向宏平均提升。后续应补齐 PLD 制备参数、器件表征数据、PPF 曲线和新噪声实验，并完成流程图更新。此外，本文器件实测基于点状顶电极单器件，crossbar 结果由实测参数建模仿真获得；向图形化 crossbar 阵列集成时，图形化底电极在交叉点边缘形成与其厚度相当的高度台阶（交叉点处为底电极厚度加膜厚，邻近区域仅为膜厚），功能薄膜在台阶边缘覆盖不连续，会在顶、底电极之间引入边缘漏电通道，这是本文现阶段采用点状电极单器件实测、并以实测参数进行阵列级建模仿真的原因；减薄底电极厚度、增加平坦化层或采用凹槽式底电极等工艺优化留作后续工作。
+
+[150] References
+
+[151] [1] S. H. Jo, T. Chang, I. Ebong, B. B. Bhadviya, P. Mazumder, and W. Lu, “Nanoscale memristor device as synapse in neuromorphic systems,” Nano Lett., vol. 10, no. 4, pp. 1297–1301, Apr. 2010, doi: 10.1021/nl904092h.
+
+[152] [2] S. Chandrasekaran, Y.-F. Chang, and F. M. Simanjuntak, “Memristor synapse—A device-level critical review,” Nanomaterials, vol. 16, no. 3, p. 179, Jan. 2026, doi: 10.3390/nano16030179.
+
+[153] [3] K. Roy, A. Jaiswal, and P. Panda, “Towards spike-based machine intelligence with neuromorphic computing,” Nature, vol. 575, no. 7784, pp. 607–617, Nov. 2019.
+
+[154] [4] W. Zhang, B. Gao, J. Tang, P. Yao, S. Yu, and H. Qian, “Neuro-inspired computing chips,” Nat. Electron., vol. 3, no. 7, pp. 371–382, Jul. 2020.
+
+[155] [5] M. E. N. Gomes, P. S. G. de-Mattos-Neto, C. Zanchettin, L. N. Matos, and B. S. Morais, “Fall detection based on computer vision: A systematic mapping study,” IEEE J. Biomed. Health Inform., vol. 28, no. 5, pp. 1–16, Apr. 2026, doi: 10.1109/JBHI.2025.11488861.
+
+[156] [6] Y. Huang, T. Ando, A. Sebastian, M.-F. Chang, J. J. Yang, and Q. Xia, “Memristor-based hardware accelerators for artificial intelligence,” Nat. Rev. Electr. Eng., vol. 1, no. 5, pp. 286–299, May 2024, doi: 10.1038/s44287-024-00037-6.
+
+[157] [7]Optoelectronic Synapses of Ni0.5Zn0.5Fe2O4 With Photoelectric Dual-Mode Response for Traffic Scenario Intelligent Detection,” J. Visualized Exp., 2026.
+
+[158] 
+
+[159] 
+
+[160] 

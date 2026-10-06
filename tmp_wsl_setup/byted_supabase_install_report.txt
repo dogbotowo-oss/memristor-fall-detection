@@ -1,0 +1,15 @@
+[info] user=ray
+[info] home=/home/ray
+[info] node=v22.23.1
+[info] npm=10.9.8
+[info] prefix_before=/home/ray/.npm-global
+[info] bashrc_path_updated=yes
+[info] prefix_after=/home/ray/.npm-global
+[step] npm install -g @byted-supabase/cli
+
+added 2 packages in 25s
+[info] install_exit_code=0
+[info] package_dir_exists=yes
+[info] bin_dir_listing=byted-supabase-cli 
+[info] command_found=byted-supabase-cli
+0.1.17
