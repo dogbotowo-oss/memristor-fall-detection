@@ -214,6 +214,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--student-noise-std", type=float, default=0.035)
     parser.add_argument("--student-noise-prob", type=float, default=0.75)
     parser.add_argument("--student-frame-drop-prob", type=float, default=0.08)
+    parser.add_argument(
+        "--device-noise-scale",
+        type=float,
+        default=1.0,
+        help="Scale factor for device/hybrid perturbations; with hybrid_vp this is the device mix ratio lambda clamped to [0.0, 1.0].",
+    )
+    parser.add_argument(
+        "--crossbar-readout-noise-scale",
+        type=float,
+        default=0.0,
+        help="Measured-device-inspired Crossbar readout nonideality scale. Applies row/column gain drift and read noise after conductance mapping.",
+    )
+    parser.add_argument(
+        "--hard-negative-normal-weight",
+        type=float,
+        default=0.0,
+        help="Extra sampler weight for normal ADL windows that look close to falls, such as low posture or high motion windows.",
+    )
+    parser.add_argument(
+        "--normal-positive-penalty",
+        type=float,
+        default=0.0,
+        help="Additional training penalty that discourages pre_fall/fall probability on normal ADL samples.",
+    )
     parser.add_argument("--teacher-ema", type=float, default=0.996)
     parser.add_argument("--consistency-weight", type=float, default=0.25)
     parser.add_argument("--consistency-ramp-epochs", type=int, default=4)
@@ -227,9 +251,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--student-noise-mode",
-        choices=["gaussian", "device"],
+        choices=["gaussian", "device", "hybrid", "hybrid_vp"],
         default="gaussian",
-        help="Noise model used with --teacher-student-noise: gaussian is the legacy noise, device adds measured device-response perturbations.",
+        help="Noise model used with --teacher-student-noise: gaussian is the legacy noise, device adds measured device-response perturbations, hybrid directly adds gaussian noise and a weak device profile, hybrid_vp uses variance-preserving gaussian/device mixing.",
     )
     parser.add_argument(
         "--skip-visual-outputs",
@@ -529,6 +553,7 @@ def build_crossbar_window(
     lrs_values: np.ndarray,
     seed: int,
     device_dynamics: Optional[dict[str, object]] = None,
+    readout_noise_scale: float = 0.0,
 ) -> np.ndarray:
     rng = np.random.default_rng(seed)
     epsc = EPSCModel()
@@ -561,9 +586,48 @@ def build_crossbar_window(
             ltd_scale = 1.0 - 0.14 * float(ltd_curve[frame_index]) * calmness
             device_jitter = rng.normal(1.0, 0.006, size=crossbar.shape)
             weighted = np.clip(crossbar * (0.75 + epsc_gain) * ppf_gain * ltp_gain * ltd_scale * device_jitter, 0.0, 1.0)
+        scale = float(np.clip(readout_noise_scale, 0.0, 2.0))
+        if scale > 0:
+            if device_dynamics is None:
+                dynamic_factor = 1.0
+            else:
+                dynamic_factor = (
+                    0.55
+                    + 0.35 * float(epsc_curve[frame_index])
+                    + 0.20 * float(ppf_curve[frame_index])
+                    + 0.15 * float(ltp_curve[frame_index])
+                    + 0.10 * float(ltd_curve[frame_index])
+                )
+            row_sigma = 0.006 * scale * dynamic_factor
+            col_sigma = 0.006 * scale * dynamic_factor
+            read_sigma = 0.004 * scale * dynamic_factor
+            row_gain = rng.normal(1.0, row_sigma, size=(weighted.shape[0], 1))
+            col_gain = rng.normal(1.0, col_sigma, size=(1, weighted.shape[1]))
+            read_noise = rng.normal(0.0, read_sigma, size=weighted.shape)
+            weighted = np.clip(weighted * row_gain * col_gain + read_noise, 0.0, 1.0)
         prev_signal = signal
         mapped_frames.append(weighted.astype(np.float32))
     return np.stack(mapped_frames, axis=0)
+
+
+def compute_adl_hard_negative_score(window_frames: np.ndarray) -> float:
+    frames = np.asarray(window_frames, dtype=np.float32)
+    if frames.ndim != 3 or len(frames) == 0:
+        return 0.0
+    foreground = np.clip(1.0 - frames, 0.0, 1.0)
+    mass = foreground.sum(axis=(1, 2)) + 1e-6
+    height = int(foreground.shape[1])
+    y_coords = np.linspace(0.0, 1.0, height, dtype=np.float32).reshape(1, height, 1)
+    center_y = ((foreground * y_coords).sum(axis=(1, 2)) / mass).mean()
+    bottom_start = max(0, int(height * 0.62))
+    bottom_ratio = foreground[:, bottom_start:, :].sum() / max(float(foreground.sum()), 1e-6)
+    if len(frames) > 1:
+        motion = float(np.mean(np.abs(np.diff(frames, axis=0))))
+    else:
+        motion = 0.0
+    motion_score = min(1.0, motion / 0.08)
+    score = 0.48 * float(center_y) + 0.34 * float(bottom_ratio) + 0.18 * motion_score
+    return float(np.clip(score, 0.0, 1.0))
 
 
 def discover_aux_dataset_root(explicit_root: Optional[Path]) -> Path:
@@ -1495,6 +1559,7 @@ class CombinedFallDataset(Dataset):
         hrs_values: np.ndarray,
         lrs_values: np.ndarray,
         device_dynamics: Optional[dict[str, object]],
+        crossbar_readout_noise_scale: float,
         augment: bool,
         base_seed: int,
     ) -> None:
@@ -1510,14 +1575,32 @@ class CombinedFallDataset(Dataset):
         self.hrs_values = hrs_values
         self.lrs_values = lrs_values
         self.device_dynamics = device_dynamics
+        self.crossbar_readout_noise_scale = crossbar_readout_noise_scale
         self.augment = augment
         self.base_seed = base_seed
 
         self.samples: list[dict[str, object]] = []
         for index, label_id in enumerate(video_labels.tolist()):
-            self.samples.append({"source": "video", "index": index, "label_id": int(label_id)})
+            hard_negative_score = 0.0
+            if int(label_id) == LABEL_NAME_TO_ID["normal"]:
+                hard_negative_score = compute_adl_hard_negative_score(video_windows[index])
+            self.samples.append(
+                {
+                    "source": "video",
+                    "index": index,
+                    "label_id": int(label_id),
+                    "hard_negative_score": hard_negative_score,
+                }
+            )
         for index, record in enumerate(auxiliary_records):
-            self.samples.append({"source": "aux", "index": index, "label_id": int(record.label_id)})
+            self.samples.append(
+                {
+                    "source": "aux",
+                    "index": index,
+                    "label_id": int(record.label_id),
+                    "hard_negative_score": 0.0,
+                }
+            )
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -1555,6 +1638,7 @@ class CombinedFallDataset(Dataset):
                 self.lrs_values,
                 sample_seed,
                 device_dynamics=self.device_dynamics,
+                readout_noise_scale=self.crossbar_readout_noise_scale,
             )
 
         tensor = torch.from_numpy(window_frames[:, np.newaxis, :, :]).float()
@@ -1617,7 +1701,11 @@ def class_count_dict(values: list[int] | np.ndarray) -> dict[str, int]:
     return {LABEL_ID_TO_NAME[label_id]: int(counts.get(label_id, 0)) for label_id in LABEL_ID_TO_NAME}
 
 
-def make_weighted_sampler(dataset: CombinedFallDataset, video_source_weight: float) -> WeightedRandomSampler:
+def make_weighted_sampler(
+    dataset: CombinedFallDataset,
+    video_source_weight: float,
+    hard_negative_normal_weight: float = 0.0,
+) -> WeightedRandomSampler:
     labels = [int(sample["label_id"]) for sample in dataset.samples]
     label_counts = Counter(labels)
     sample_weights = []
@@ -1626,7 +1714,11 @@ def make_weighted_sampler(dataset: CombinedFallDataset, video_source_weight: flo
         source = str(sample["source"])
         label_weight = 1.0 / math.sqrt(max(label_counts[label_id], 1))
         source_weight = video_source_weight if source == "video" else 1.0
-        sample_weights.append(label_weight * source_weight)
+        hard_weight = 1.0
+        if label_id == LABEL_NAME_TO_ID["normal"] and hard_negative_normal_weight > 0:
+            hard_score = float(sample.get("hard_negative_score", 0.0))
+            hard_weight += float(hard_negative_normal_weight) * hard_score
+        sample_weights.append(label_weight * source_weight * hard_weight)
     weights_tensor = torch.as_tensor(sample_weights, dtype=torch.double)
     return WeightedRandomSampler(weights_tensor, num_samples=len(sample_weights), replacement=True)
 
@@ -1655,6 +1747,7 @@ def apply_student_noise(
     frame_drop_prob: float,
     noise_mode: str = "gaussian",
     device_noise_profile: Optional[np.ndarray] = None,
+    device_noise_scale: float = 1.0,
 ) -> torch.Tensor:
     if noise_std <= 0 and frame_drop_prob <= 0:
         return batch_x
@@ -1665,18 +1758,41 @@ def apply_student_noise(
         < float(np.clip(noise_prob, 0.0, 1.0))
     ).to(batch_x.dtype)
     noisy = batch_x
-    if noise_mode == "device" and device_noise_profile is not None and len(device_noise_profile) > 0:
+    if noise_mode == "hybrid_vp" and device_noise_profile is not None and len(device_noise_profile) > 0:
+        mix = float(np.clip(device_noise_scale, 0.0, 1.0))
+        profile = resample_curve_to_frames(np.asarray(device_noise_profile, dtype=np.float32), time_steps)
+        profile = profile - float(profile.mean())
+        profile_std = float(profile.std())
+        if profile_std <= 1e-6:
+            profile = np.ones_like(profile, dtype=np.float32)
+        else:
+            profile = profile / profile_std
+        profile_tensor = torch.tensor(profile, device=batch_x.device, dtype=batch_x.dtype).view(1, time_steps, 1, 1, 1)
+        gaussian_unit = torch.randn_like(batch_x)
+        device_pattern = torch.randn(
+            (batch_size, 1, 1, batch_x.size(-2), batch_x.size(-1)),
+            device=batch_x.device,
+            dtype=batch_x.dtype,
+        )
+        device_unit = profile_tensor * device_pattern
+        device_std = device_unit.flatten(1).std(dim=1, unbiased=False).clamp_min(1e-6).view(batch_size, 1, 1, 1, 1)
+        device_unit = device_unit / device_std
+        mixed_unit = math.sqrt(max(0.0, 1.0 - mix)) * gaussian_unit + math.sqrt(mix) * device_unit
+        noisy = noisy + mixed_unit * float(noise_std) * apply_mask
+    elif noise_mode in {"device", "hybrid"} and device_noise_profile is not None and len(device_noise_profile) > 0:
+        scale = float(np.clip(device_noise_scale, 0.0, 2.0))
         profile = resample_curve_to_frames(np.asarray(device_noise_profile, dtype=np.float32), time_steps)
         profile = profile - float(profile.mean())
         profile_tensor = torch.tensor(profile, device=batch_x.device, dtype=batch_x.dtype).view(1, time_steps, 1, 1, 1)
-        temporal_gain = 1.0 + apply_mask * profile_tensor * float(noise_std) * 2.5
+        temporal_gain = 1.0 + apply_mask * profile_tensor * float(noise_std) * 2.5 * scale
         spatial_jitter = 1.0 + apply_mask * torch.randn(
             (batch_size, 1, 1, batch_x.size(-2), batch_x.size(-1)),
             device=batch_x.device,
             dtype=batch_x.dtype,
-        ) * float(noise_std) * 0.35
+        ) * float(noise_std) * 0.35 * scale
         noisy = noisy * temporal_gain * spatial_jitter
-        gaussian = torch.randn_like(batch_x) * float(noise_std) * 0.45
+        gaussian_scale = 1.0 if noise_mode == "hybrid" else 0.45 * scale
+        gaussian = torch.randn_like(batch_x) * float(noise_std) * gaussian_scale
         noisy = noisy + gaussian * apply_mask
     elif noise_std > 0:
         gaussian = torch.randn_like(batch_x) * float(noise_std)
@@ -1954,9 +2070,16 @@ def train_detector(
         np.array([0.1], dtype=np.float32),
         np.array([0.9], dtype=np.float32),
     )
-    device_dynamics = load_device_dynamics(args.data_dir) if (args.use_device_dynamics or args.student_noise_mode == "device") else None
-    crossbar_device_dynamics = device_dynamics if (use_crossbar and args.use_device_dynamics) else None
-    device_noise_profile = build_device_noise_profile(device_dynamics) if args.student_noise_mode == "device" else None
+    use_crossbar_readout_noise = use_crossbar and args.crossbar_readout_noise_scale > 0
+    device_dynamics = load_device_dynamics(args.data_dir) if (
+        args.use_device_dynamics
+        or use_crossbar_readout_noise
+        or args.student_noise_mode in {"device", "hybrid", "hybrid_vp"}
+    ) else None
+    crossbar_device_dynamics = device_dynamics if (
+        use_crossbar and (args.use_device_dynamics or use_crossbar_readout_noise)
+    ) else None
+    device_noise_profile = build_device_noise_profile(device_dynamics) if args.student_noise_mode in {"device", "hybrid", "hybrid_vp"} else None
 
     train_dataset = CombinedFallDataset(
         video_windows=train_video_windows,
@@ -1971,6 +2094,7 @@ def train_detector(
         hrs_values=hrs_values,
         lrs_values=lrs_values,
         device_dynamics=crossbar_device_dynamics,
+        crossbar_readout_noise_scale=args.crossbar_readout_noise_scale,
         augment=True,
         base_seed=args.seed,
     )
@@ -1987,11 +2111,31 @@ def train_detector(
         hrs_values=hrs_values,
         lrs_values=lrs_values,
         device_dynamics=crossbar_device_dynamics,
+        crossbar_readout_noise_scale=args.crossbar_readout_noise_scale,
         augment=False,
         base_seed=args.seed + 9999,
     )
 
-    sampler = make_weighted_sampler(train_dataset, video_source_weight=args.video_source_weight)
+    if args.hard_negative_normal_weight > 0:
+        hard_scores = [
+            float(sample.get("hard_negative_score", 0.0))
+            for sample in train_dataset.samples
+            if int(sample["label_id"]) == LABEL_NAME_TO_ID["normal"]
+        ]
+        if hard_scores:
+            log(
+                "Hard-negative ADL sampler | "
+                f"normal_windows={len(hard_scores)} "
+                f"mean_score={float(np.mean(hard_scores)):.3f} "
+                f"top10_mean={float(np.mean(sorted(hard_scores)[-min(10, len(hard_scores)):])):.3f} "
+                f"weight={args.hard_negative_normal_weight:.2f}"
+            )
+
+    sampler = make_weighted_sampler(
+        train_dataset,
+        video_source_weight=args.video_source_weight,
+        hard_negative_normal_weight=args.hard_negative_normal_weight,
+    )
     train_loader = make_loader(train_dataset, args.batch_size, False, sampler, device)
     val_loader = make_loader(val_dataset, max(1, args.batch_size), False, None, device)
     no_fall_loader: Optional[DataLoader] = None
@@ -2063,10 +2207,20 @@ def train_detector(
                     frame_drop_prob=args.student_frame_drop_prob,
                     noise_mode=args.student_noise_mode,
                     device_noise_profile=device_noise_profile,
+                    device_noise_scale=args.device_noise_scale,
                 )
             logits = model(student_x)
             supervised_loss = criterion(logits, batch_y)
             loss = supervised_loss
+            if args.normal_positive_penalty > 0:
+                normal_mask = batch_y == LABEL_NAME_TO_ID["normal"]
+                if bool(normal_mask.any()):
+                    normal_probs = torch.softmax(logits[normal_mask], dim=1)
+                    normal_positive_mass = (
+                        normal_probs[:, LABEL_NAME_TO_ID["pre_fall"]]
+                        + normal_probs[:, LABEL_NAME_TO_ID["fall"]]
+                    )
+                    loss = loss + float(args.normal_positive_penalty) * normal_positive_mass.mean()
             if teacher_model is not None:
                 with torch.no_grad():
                     teacher_logits = teacher_model(batch_x)
@@ -2094,6 +2248,7 @@ def train_detector(
                         frame_drop_prob=args.student_frame_drop_prob,
                         noise_mode=args.student_noise_mode,
                         device_noise_profile=device_noise_profile,
+                        device_noise_scale=args.device_noise_scale,
                     )
                 no_fall_logits = model(no_fall_student)
                 no_fall_probs = torch.softmax(no_fall_logits, dim=1)
@@ -2161,10 +2316,11 @@ def train_detector(
                     "image_size": args.image_size,
                     "hidden_dim": args.hidden_dim,
                     "use_crossbar": use_crossbar,
-                    "use_device_dynamics": bool(args.use_device_dynamics),
+                    "use_device_dynamics": bool(crossbar_device_dynamics is not None),
                     "device_dynamics_sources": (
                         crossbar_device_dynamics.get("source_files", {}) if crossbar_device_dynamics is not None else {}
                     ),
+                    "crossbar_readout_noise_scale": float(np.clip(args.crossbar_readout_noise_scale, 0.0, 2.0)),
                     "use_pixel_human": args.use_pixel_human,
                     "use_silhouette_human": args.use_silhouette_human,
                     "pixel_grid_size": args.pixel_grid_size,
@@ -2177,9 +2333,12 @@ def train_detector(
                     "student_noise_std": args.student_noise_std,
                     "student_noise_prob": args.student_noise_prob,
                     "student_frame_drop_prob": args.student_frame_drop_prob,
+                    "device_noise_scale": float(np.clip(args.device_noise_scale, 0.0, 2.0)),
                     "teacher_ema": args.teacher_ema,
                     "consistency_weight": args.consistency_weight,
                     "external_no_fall_weight": args.external_no_fall_weight,
+                    "hard_negative_normal_weight": float(args.hard_negative_normal_weight),
+                    "normal_positive_penalty": float(args.normal_positive_penalty),
                     "validation_split": validation_split_summary,
                 },
                 "class_names": LABEL_ID_TO_NAME,
@@ -2352,6 +2511,7 @@ def predict_video_frames(
     hrs_values: np.ndarray,
     lrs_values: np.ndarray,
     device_dynamics: Optional[dict[str, object]],
+    crossbar_readout_noise_scale: float,
     device: torch.device,
     batch_size: int,
     fall_prob_threshold: float = 0.0,
@@ -2379,6 +2539,7 @@ def predict_video_frames(
                         lrs_values,
                         seed=10000 + start,
                         device_dynamics=device_dynamics,
+                        readout_noise_scale=crossbar_readout_noise_scale,
                     )
                 batch_windows.append(window_frames[:, np.newaxis, :, :])
             batch_tensor = torch.from_numpy(np.stack(batch_windows, axis=0)).float().to(device)
@@ -3601,6 +3762,7 @@ def write_report_json(
         "use_crossbar": bool(config.get("use_crossbar", not args.disable_crossbar)),
         "use_device_dynamics": bool(config.get("use_device_dynamics", args.use_device_dynamics)),
         "device_dynamics_sources": config.get("device_dynamics_sources", {}),
+        "crossbar_readout_noise_scale": float(config.get("crossbar_readout_noise_scale", args.crossbar_readout_noise_scale)),
         "use_pixel_human": bool(config.get("use_pixel_human", args.use_pixel_human)),
         "use_silhouette_human": bool(config.get("use_silhouette_human", args.use_silhouette_human)),
         "pixel_grid_size": int(config.get("pixel_grid_size", args.pixel_grid_size)),
@@ -3724,6 +3886,7 @@ def run_detection_inference(
     infer_stride = int(config.get("infer_stride", args.infer_stride))
     use_crossbar = bool(config.get("use_crossbar", not args.disable_crossbar))
     use_device_dynamics = bool(config.get("use_device_dynamics", args.use_device_dynamics))
+    crossbar_readout_noise_scale = float(config.get("crossbar_readout_noise_scale", args.crossbar_readout_noise_scale))
     use_pixel_human = bool(config.get("use_pixel_human", args.use_pixel_human))
     use_silhouette_human = bool(config.get("use_silhouette_human", args.use_silhouette_human))
     pixel_grid_size = int(config.get("pixel_grid_size", args.pixel_grid_size))
@@ -3731,7 +3894,9 @@ def run_detection_inference(
         np.array([0.1], dtype=np.float32),
         np.array([0.9], dtype=np.float32),
     )
-    device_dynamics = load_device_dynamics(args.data_dir) if (use_crossbar and use_device_dynamics) else None
+    device_dynamics = load_device_dynamics(args.data_dir) if (
+        use_crossbar and (use_device_dynamics or crossbar_readout_noise_scale > 0)
+    ) else None
 
     frames, fps = read_video_frames(
         video_path,
@@ -3750,6 +3915,7 @@ def run_detection_inference(
         hrs_values=hrs_values,
         lrs_values=lrs_values,
         device_dynamics=device_dynamics,
+        crossbar_readout_noise_scale=crossbar_readout_noise_scale,
         device=device,
         batch_size=max(1, args.batch_size),
         fall_prob_threshold=args.fall_prob_threshold,
@@ -3918,6 +4084,7 @@ def run_plasticity_analysis(
     infer_stride = int(config.get("infer_stride", args.infer_stride))
     use_crossbar = bool(config.get("use_crossbar", not args.disable_crossbar))
     use_device_dynamics = bool(config.get("use_device_dynamics", args.use_device_dynamics))
+    crossbar_readout_noise_scale = float(config.get("crossbar_readout_noise_scale", args.crossbar_readout_noise_scale))
     use_pixel_human = bool(config.get("use_pixel_human", args.use_pixel_human))
     use_silhouette_human = bool(config.get("use_silhouette_human", args.use_silhouette_human))
     pixel_grid_size = int(config.get("pixel_grid_size", args.pixel_grid_size))
@@ -3925,7 +4092,9 @@ def run_plasticity_analysis(
         np.array([0.1], dtype=np.float32),
         np.array([0.9], dtype=np.float32),
     )
-    device_dynamics = load_device_dynamics(args.data_dir) if (use_crossbar and use_device_dynamics) else None
+    device_dynamics = load_device_dynamics(args.data_dir) if (
+        use_crossbar and (use_device_dynamics or crossbar_readout_noise_scale > 0)
+    ) else None
 
     frames, fps = read_video_frames(
         args.video,
@@ -3944,6 +4113,7 @@ def run_plasticity_analysis(
         hrs_values=hrs_values,
         lrs_values=lrs_values,
         device_dynamics=device_dynamics,
+        crossbar_readout_noise_scale=crossbar_readout_noise_scale,
         device=device,
         batch_size=max(1, args.batch_size),
     )
