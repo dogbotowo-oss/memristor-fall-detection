@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+external_upfall/
+image/
+logs/
+models/
+reports/
+analysis/*.log
+analysis/*.npy
+analysis/*.json
