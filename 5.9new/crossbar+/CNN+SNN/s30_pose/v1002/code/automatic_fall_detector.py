@@ -236,6 +236,11 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated normalized conductance levels (0<g<=1) from measured device states; quantizes SNN branch linear-layer weights onto these levels with STE. Overrides --snn-binary-weights.",
     )
     parser.add_argument(
+        "--snn-learnable-scale",
+        action="store_true",
+        help="Make the per-channel quantization scale a learnable parameter (initialized to per-channel mean|w|) instead of recomputing it from the weights each forward pass.",
+    )
+    parser.add_argument(
         "--snn-fusion-gate-floor",
         type=float,
         default=0.0,
@@ -2222,20 +2227,26 @@ class CombinedFallDataset(Dataset):
         return tensor, target, torch.tensor(hard_negative_score, dtype=torch.float32), pose_tensor
 
 
-def _binarize_weight_ste(weight: torch.Tensor) -> torch.Tensor:
-    alpha = weight.abs().mean(dim=1, keepdim=True).clamp_min(1e-8)
+def _binarize_weight_ste(weight: torch.Tensor, alpha: Optional[torch.Tensor] = None) -> torch.Tensor:
+    if alpha is None:
+        alpha = weight.abs().mean(dim=1, keepdim=True)
+    alpha = alpha.reshape(-1, 1).clamp_min(1e-8)
     quantized = alpha * torch.sign(weight)
-    return weight + (quantized - weight).detach()
+    # forward = quantized; gradients flow to weight (STE) AND to alpha
+    return quantized + weight - weight.detach()
 
 
-def _quantize_weight_ste(weight: torch.Tensor, levels: torch.Tensor) -> torch.Tensor:
+def _quantize_weight_ste(weight: torch.Tensor, levels: torch.Tensor, alpha: Optional[torch.Tensor] = None) -> torch.Tensor:
     # levels: 1-D tensor of normalized conductance levels.
     # Single-device mode (all levels > 0): quantize |w| onto the levels and
     # reapply the sign, e.g. measured compliance states
     # 847 Ohm / 8.1 kOhm / 40 kOhm / 90 kOhm -> ratios {1.0, 0.104, 0.021, 0.0094}.
     # Differential-pair mode (levels contain 0 and negatives): quantize w
     # directly onto signed levels {g_i - g_j}, dense near zero as in hardware.
-    alpha = weight.abs().mean(dim=1, keepdim=True).clamp_min(1e-8)
+    # alpha: optional learnable per-output-channel scale; defaults to mean|w|.
+    if alpha is None:
+        alpha = weight.abs().mean(dim=1, keepdim=True)
+    alpha = alpha.reshape(-1, 1).clamp_min(1e-8)
     lv = levels.to(weight.device, weight.dtype)
     mids = ((lv[:-1] + lv[1:]) / 2).contiguous()
     if bool((lv > 0).all()):
@@ -2245,7 +2256,8 @@ def _quantize_weight_ste(weight: torch.Tensor, levels: torch.Tensor) -> torch.Te
     else:
         idx = torch.bucketize(weight / alpha, mids)
         quantized = alpha * lv[idx]
-    return weight + (quantized - weight).detach()
+    # forward = quantized; gradients flow to weight (STE) AND to alpha
+    return quantized + weight - weight.detach()
 
 
 class FallEventDetector(nn.Module):
@@ -2270,12 +2282,16 @@ class FallEventDetector(nn.Module):
         use_snn_class_head: bool = True,
         snn_binary_weights: bool = False,
         snn_weight_levels: Optional[list] = None,
+        snn_learnable_scale: bool = False,
     ) -> None:
         super().__init__()
         self.snn_binary_weights = bool(snn_binary_weights and use_snn_temporal_branch)
         self.snn_weight_levels = (
             [float(x) for x in snn_weight_levels]
             if snn_weight_levels and use_snn_temporal_branch else None
+        )
+        self.snn_learnable_scale = bool(
+            snn_learnable_scale and (self.snn_binary_weights or self.snn_weight_levels)
         )
         self.use_snn_temporal_branch = bool(use_snn_temporal_branch)
         self.use_snn_pose_input = bool(use_snn_pose_input and use_snn_temporal_branch)
@@ -2342,6 +2358,9 @@ class FallEventDetector(nn.Module):
                 nn.ReLU(inplace=True),
                 nn.Linear(snn_hidden_dim, snn_hidden_dim),
             )
+            if self.snn_learnable_scale:
+                self.snn_scale0 = nn.Parameter(self.snn_input[0].weight.detach().abs().mean(dim=1))
+                self.snn_scale1 = nn.Parameter(self.snn_input[3].weight.detach().abs().mean(dim=1))
             snn_fusion_dim = snn_hidden_dim * 3
             if self.use_snn_fusion_gate:
                 gate_input_dim = hidden_dim * 6 + snn_fusion_dim + self.snn_gate_context_dim
@@ -2487,20 +2506,28 @@ class FallEventDetector(nn.Module):
         weight_map = None
         if self.snn_weight_levels:
             levels = torch.tensor(sorted(self.snn_weight_levels), dtype=torch.float32)
-            weight_map = lambda w: _quantize_weight_ste(w, levels)
+            if self.snn_learnable_scale:
+                weight_map = lambda w, s: _quantize_weight_ste(w, levels, s)
+            else:
+                weight_map = lambda w, s: _quantize_weight_ste(w, levels)
         elif self.snn_binary_weights:
-            weight_map = _binarize_weight_ste
+            if self.snn_learnable_scale:
+                weight_map = lambda w, s: _binarize_weight_ste(w, s)
+            else:
+                weight_map = lambda w, s: _binarize_weight_ste(w)
         if weight_map is not None:
+            scale0 = self.snn_scale0 if self.snn_learnable_scale else None
+            scale1 = self.snn_scale1 if self.snn_learnable_scale else None
             hidden = torch.nn.functional.linear(
                 features,
-                weight_map(self.snn_input[0].weight),
+                weight_map(self.snn_input[0].weight, scale0),
                 self.snn_input[0].bias,
             )
             hidden = self.snn_input[1](hidden)
             hidden = self.snn_input[2](hidden)
             current = torch.nn.functional.linear(
                 hidden,
-                weight_map(self.snn_input[3].weight),
+                weight_map(self.snn_input[3].weight, scale1),
                 self.snn_input[3].bias,
             )
         else:
@@ -3261,6 +3288,7 @@ def train_detector(
             [float(x) for x in str(args.snn_weight_levels).split(",") if x.strip()]
             if str(args.snn_weight_levels).strip() else None
         ),
+        snn_learnable_scale=args.snn_learnable_scale,
     ).to(device)
     if args.init_model_path is not None:
         if not args.init_model_path.exists():
@@ -3478,6 +3506,7 @@ def train_detector(
                     "snn_fusion_gate_floor": float(np.clip(args.snn_fusion_gate_floor, 0.0, 0.95)),
                     "late_fusion_lambda": float(max(0.0, args.late_fusion_lambda)),
                     "snn_binary_weights": bool(args.snn_binary_weights),
+                    "snn_learnable_scale": bool(args.snn_learnable_scale),
                     "snn_weight_levels": (
                         [float(x) for x in str(args.snn_weight_levels).split(",") if x.strip()]
                         if str(args.snn_weight_levels).strip() else None
@@ -3576,6 +3605,7 @@ def load_model_checkpoint(
         use_snn_class_head=has_snn_head,
         snn_binary_weights=bool(config.get("snn_binary_weights", False)),
         snn_weight_levels=config.get("snn_weight_levels") or None,
+        snn_learnable_scale=bool(config.get("snn_learnable_scale", False)),
     ).to(device)
     model.load_state_dict(checkpoint["model_state"])
     model.eval()

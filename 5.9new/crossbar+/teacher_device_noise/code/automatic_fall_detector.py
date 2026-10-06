@@ -214,6 +214,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--student-noise-std", type=float, default=0.035)
     parser.add_argument("--student-noise-prob", type=float, default=0.75)
     parser.add_argument("--student-frame-drop-prob", type=float, default=0.08)
+    parser.add_argument(
+        "--device-noise-scale",
+        type=float,
+        default=1.0,
+        help="Scale factor for measured device-response perturbations when --student-noise-mode device is used; clamped to [0.0, 2.0].",
+    )
     parser.add_argument("--teacher-ema", type=float, default=0.996)
     parser.add_argument("--consistency-weight", type=float, default=0.25)
     parser.add_argument("--consistency-ramp-epochs", type=int, default=4)
@@ -1655,6 +1661,7 @@ def apply_student_noise(
     frame_drop_prob: float,
     noise_mode: str = "gaussian",
     device_noise_profile: Optional[np.ndarray] = None,
+    device_noise_scale: float = 1.0,
 ) -> torch.Tensor:
     if noise_std <= 0 and frame_drop_prob <= 0:
         return batch_x
@@ -1666,17 +1673,18 @@ def apply_student_noise(
     ).to(batch_x.dtype)
     noisy = batch_x
     if noise_mode == "device" and device_noise_profile is not None and len(device_noise_profile) > 0:
+        scale = float(np.clip(device_noise_scale, 0.0, 2.0))
         profile = resample_curve_to_frames(np.asarray(device_noise_profile, dtype=np.float32), time_steps)
         profile = profile - float(profile.mean())
         profile_tensor = torch.tensor(profile, device=batch_x.device, dtype=batch_x.dtype).view(1, time_steps, 1, 1, 1)
-        temporal_gain = 1.0 + apply_mask * profile_tensor * float(noise_std) * 2.5
+        temporal_gain = 1.0 + apply_mask * profile_tensor * float(noise_std) * 2.5 * scale
         spatial_jitter = 1.0 + apply_mask * torch.randn(
             (batch_size, 1, 1, batch_x.size(-2), batch_x.size(-1)),
             device=batch_x.device,
             dtype=batch_x.dtype,
-        ) * float(noise_std) * 0.35
+        ) * float(noise_std) * 0.35 * scale
         noisy = noisy * temporal_gain * spatial_jitter
-        gaussian = torch.randn_like(batch_x) * float(noise_std) * 0.45
+        gaussian = torch.randn_like(batch_x) * float(noise_std) * 0.45 * scale
         noisy = noisy + gaussian * apply_mask
     elif noise_std > 0:
         gaussian = torch.randn_like(batch_x) * float(noise_std)
@@ -2063,6 +2071,7 @@ def train_detector(
                     frame_drop_prob=args.student_frame_drop_prob,
                     noise_mode=args.student_noise_mode,
                     device_noise_profile=device_noise_profile,
+                    device_noise_scale=args.device_noise_scale,
                 )
             logits = model(student_x)
             supervised_loss = criterion(logits, batch_y)
@@ -2094,6 +2103,7 @@ def train_detector(
                         frame_drop_prob=args.student_frame_drop_prob,
                         noise_mode=args.student_noise_mode,
                         device_noise_profile=device_noise_profile,
+                        device_noise_scale=args.device_noise_scale,
                     )
                 no_fall_logits = model(no_fall_student)
                 no_fall_probs = torch.softmax(no_fall_logits, dim=1)
@@ -2177,6 +2187,7 @@ def train_detector(
                     "student_noise_std": args.student_noise_std,
                     "student_noise_prob": args.student_noise_prob,
                     "student_frame_drop_prob": args.student_frame_drop_prob,
+                    "device_noise_scale": float(np.clip(args.device_noise_scale, 0.0, 2.0)),
                     "teacher_ema": args.teacher_ema,
                     "consistency_weight": args.consistency_weight,
                     "external_no_fall_weight": args.external_no_fall_weight,
