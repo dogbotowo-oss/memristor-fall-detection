@@ -11,7 +11,7 @@ This queue adds the two missing factorization steps:
   - distnoise : measured HRS/LRS distributions + readout noise 0.25
                 (no --use-device-dynamics)
 
-Paths updated from E:\\rray\\12.18-2 to F:\\12.18-2; everything else
+Paths are taken from the command line (see --root below); everything else
 (training recipe, seed 11, Zenodo-val thresholding, frozen one-shot test)
 is identical to queue_loso_v1000.py.
 """
