@@ -8,18 +8,25 @@ order to run. Video datasets are **not** included (see below).
 All device files are Agilent B1500A exports; the loader in `automatic_fall_detector.py`
 (`load_conductance_values`) reads the `DataValue, <t>, <I>` rows and keeps positive currents.
 
-| file | measurement | read bias | samples | duration | used for |
-|---|---|---|---|---|---|
-| `HRS.csv` | high-resistance state, continuous read | 0.1 V | 10,001 @ 1 s | 1.0 × 10⁴ s | conductance distribution for device-aware encoding / weight quantisation |
-| `LRS.csv` | low-resistance state, continuous read | 0.1 V | 2,223 @ 1 s | 2.2 × 10³ s | same as above |
+| file | measurement | read bias | samples | used for |
+|---|---|---|---|---|
+| `HRS.csv` | high-resistance state, continuous read | 0.1 V | 8,362 valid | conductance distribution for device-aware encoding / weight quantisation |
+| `LRS.csv` | low-resistance state, continuous read | 0.1 V | 2,223 valid | same as above |
 | `EPSC.csv` | single 2 V / 1 ms pulse, 0.2 V read | 0.2 V | 1 ms window | — | excitatory post-synaptic current term |
 | `LTP-1ms-阶梯付 [(1) ; 7_28_2026 7_59_16 PM].csv` | potentiation staircase | — | — | — | long-term plasticity term |
 | `LTD-1ms-阶梯 [(1) ; 7_28_2026 7_53_06 PM].csv` | depression staircase | — | — | — | long-term plasticity term |
 | `PPF-0.001-60-60.xls` | paired-pulse facilitation | — | — | — | short-term plasticity term |
 
-`HRS.csv` and `LRS.csv` are **independent retention measurements**, not the long-duration
+`HRS.csv` and `LRS.csv` hold the **readout-current values** measured at a 0.1 V read voltage on
+one device; the timestamps are set to zero because only the value distributions are used. They are
+the sampling pools from which `image_to_crossbar_array` draws the per-pixel conductance of the
+crossbar array (dark pixels from `HRS.csv`, bright pixels from `LRS.csv`), after the two arrays are
+normalised by their joint maximum. The measured traces therefore carry the state-dependent readout
+scatter that the device-aware encoding relies on. They are independent of the long-duration
 retention trace used for the stability figure (10⁵ s at 0.01 V read, plotted separately in the
-manuscript). They are only used to obtain the two readout-current distributions.
+manuscript), which uses a different read level; because the HRS conduction is not ohmic, the
+on/off ratio obtained from these 0.1 V readout values is lower than the 0.01 V retention figure.
+Raw time-resolved traces are available on request.
 
 ## Trained weights (`models/`)
 
