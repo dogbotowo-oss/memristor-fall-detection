@@ -59,3 +59,8 @@
 *.jpeg
 *.bmp
 *.gif
+
+# Reproducibility assets checked in deliberately (device data, weights, pose cache).
+!/data/**
+!/models/**
+!/pose_cache/**

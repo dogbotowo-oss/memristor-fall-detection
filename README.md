@@ -87,3 +87,6 @@ for the full list; the important ones are `--video`, `--external-labeled-dir`,
 
 `VERSIONS.md` records which snapshot produced each number, and
 `s30_pose/v1001/per_fold.csv` holds the per-fold metrics of the main table.
+
+Device data, trained checkpoints and the pose cache needed for exact reproduction live in `data/`, `models/` and `pose_cache/`; see [DATA.md](DATA.md) for provenance, read voltages and what is intentionally not included.
+
