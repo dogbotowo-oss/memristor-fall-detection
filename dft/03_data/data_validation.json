@@ -1,0 +1,63 @@
+{
+  "font": "Times New Roman",
+  "electronic_structure": {
+    "DOS_EF_bulk": 0.28947,
+    "DOS_EF_O27": 1.2188100000000004,
+    "EF_bulk_eV": 10.5,
+    "EF_O27_eV": 10.514,
+    "FeB_delta_d_total": 0.8774999999999977,
+    "FeB8_delta_d": 0.4577,
+    "FeB12_delta_d": 0.45999999999999996,
+    "Cu_delta_d_total": 0.03390000000000093,
+    "other_FeB_delta_d_total": -0.040200000000002234,
+    "far_FeB_max_abs_delta_d": 0.010299999999999976,
+    "DOS_EF_ratio": 4.210488133485336
+  },
+  "migration": {
+    "forward_E_eV": 1.6035196436737222,
+    "reverse_E_eV": 1.4719192572272333,
+    "forward_F_eV": 1.6296055669882592,
+    "reverse_F_eV": 1.5682417140818934,
+    "endpoint_delta_E_eV": 0.13160038644648897,
+    "images": 5,
+    "climbing_image": 3,
+    "max_movable_path_error_eV_per_A": 0.0446806085,
+    "xsf_vs_path_max_coordinate_difference_A": 0.0063059862065153825,
+    "xsf_vs_single_point_max_coordinate_difference_A": 6.268971205633197e-07,
+    "vacancy_sites_initial_final": [
+      32,
+      25
+    ],
+    "migrating_atom_slot": 25,
+    "moving_oxygen_bulk_sites_initial_final": [
+      25,
+      32
+    ],
+    "moving_oxygen_endpoint_displacement_A": 2.6882743362598296,
+    "rendered_cation_slots": [
+      2,
+      6,
+      10,
+      14,
+      17,
+      20
+    ],
+    "rendered_atom_slots": [
+      2,
+      6,
+      10,
+      14,
+      17,
+      20,
+      25,
+      34,
+      37,
+      40,
+      43,
+      44,
+      47,
+      50,
+      54
+    ]
+  }
+}

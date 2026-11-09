@@ -1,0 +1,6 @@
+image,role,E_rel_eV,error_eV_per_A
+1,reactant,0.0000,0.0000
+2,image2,0.7148,0.0278
+3,transition_state_CI,1.6294,0.0416
+4,image4,0.9314,0.0447
+5,product,0.0613,0.0377

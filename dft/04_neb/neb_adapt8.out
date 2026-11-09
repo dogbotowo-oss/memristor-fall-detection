@@ -1,0 +1,284 @@
+﻿
+     Program NEB v.7.3 starts on 31Oct2026 at 14:42:58 
+
+     This program is part of the open-source Quantum ESPRESSO suite
+     for quantum simulation of materials; please cite
+         "P. Giannozzi et al., J. Phys.:Condens. Matter 21 395502 (2009);
+         "P. Giannozzi et al., J. Phys.:Condens. Matter 29 465901 (2017);
+         "P. Giannozzi et al., J. Chem. Phys. 152 154105 (2020);
+          URL http://www.quantum-espresso.org", 
+     in publications or presentations arising from this work. More details at
+     http://www.quantum-espresso.org/quote
+
+     Parallel version (MPI), running on    32 processors
+
+     MPI processes distributed on     1 nodes
+     205980 MiB available memory on the printing compute node when the environment starts
+ 
+
+     Parsing file: neb_adapt8.in
+     Reading input from pw_1.in
+     file Zn.pbe-dnl-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Ni.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Cu.pbe-dn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file O.pbe-n-kjpaw_psl.1.0.0.UPF: wavefunction(s)  2S 2P renormalized
+     Reading input from pw_2.in
+     file Zn.pbe-dnl-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Ni.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Cu.pbe-dn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file O.pbe-n-kjpaw_psl.1.0.0.UPF: wavefunction(s)  2S 2P renormalized
+     Reading input from pw_3.in
+     file Zn.pbe-dnl-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Ni.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Cu.pbe-dn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file O.pbe-n-kjpaw_psl.1.0.0.UPF: wavefunction(s)  2S 2P renormalized
+     Reading input from pw_4.in
+     file Zn.pbe-dnl-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Ni.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Cu.pbe-dn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file O.pbe-n-kjpaw_psl.1.0.0.UPF: wavefunction(s)  2S 2P renormalized
+     Reading input from pw_5.in
+     file Zn.pbe-dnl-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Fe.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Ni.pbe-spn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  3P 3D renormalized
+     file Cu.pbe-dn-kjpaw_psl.1.0.0.UPF: wavefunction(s)  4S 3D renormalized
+     file O.pbe-n-kjpaw_psl.1.0.0.UPF: wavefunction(s)  2S 2P renormalized
+
+     reading file 'nfo_nebMD7.path'
+
+ 
+     string_method                 =    neb
+     restart_mode                  =    restart
+     opt_scheme                    =    quick-min
+     num_of_images                 =    5
+     nstep_path                    =    80
+     CI_scheme                     =    auto
+     first_last_opt                =    F
+     use_freezing                  =    F
+     ds                            =    0.3000 a.u.
+     k_max                         =    0.1000 a.u.
+     k_min                         =    0.1000 a.u.
+     suggested k_max               =    6.8539 a.u.
+     suggested k_min               =    6.8539 a.u.
+     path_thr                      =    0.0500 eV / A
+
+     ------------------------------ iteration  10 ------------------------------
+
+     tcpu =      3.7    self-consistency for image   2
+     tcpu =   1080.4    self-consistency for image   3
+     tcpu =   2134.3    self-consistency for image   4
+
+     activation energy (->) =   1.631263 eV
+     activation energy (<-) =   1.569924 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6918257            0.070036            F
+         3    -119963.7798663            0.068505            F
+         4    -119964.4206591            0.294814            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.681 bohr
+     inter-image distance =  1.670 bohr
+
+     ------------------------------ iteration  11 ------------------------------
+
+     tcpu =   3931.7    self-consistency for image   2
+     tcpu =   5102.8    self-consistency for image   3
+     tcpu =   6146.4    self-consistency for image   4
+
+     activation energy (->) =   1.630955 eV
+     activation energy (<-) =   1.569616 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6927672            0.066024            F
+         3    -119963.7801740            0.063218            F
+         4    -119964.4289259            0.244262            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.685 bohr
+     inter-image distance =  1.671 bohr
+
+     ------------------------------ iteration  12 ------------------------------
+
+     tcpu =   7657.9    self-consistency for image   2
+     tcpu =   8850.9    self-consistency for image   3
+     tcpu =   9970.8    self-consistency for image   4
+
+     activation energy (->) =   1.630663 eV
+     activation energy (<-) =   1.569323 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6936180            0.053244            F
+         3    -119963.7804669            0.060962            F
+         4    -119964.4364266            0.192998            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.689 bohr
+     inter-image distance =  1.672 bohr
+
+     ------------------------------ iteration  13 ------------------------------
+
+     tcpu =  11534.3    self-consistency for image   2
+     tcpu =  12691.5    self-consistency for image   3
+     tcpu =  13818.7    self-consistency for image   4
+
+     activation energy (->) =   1.630391 eV
+     activation energy (<-) =   1.569052 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6943825            0.052198            F
+         3    -119963.7807383            0.058581            F
+         4    -119964.4432723            0.143973            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.694 bohr
+     inter-image distance =  1.674 bohr
+
+     ------------------------------ iteration  14 ------------------------------
+
+     tcpu =  15549.4    self-consistency for image   2
+     tcpu =  16744.6    self-consistency for image   3
+     tcpu =  17902.7    self-consistency for image   4
+
+     activation energy (->) =   1.630144 eV
+     activation energy (<-) =   1.568804 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6950477            0.043640            F
+         3    -119963.7809859            0.055463            F
+         4    -119964.4497519            0.100258            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.701 bohr
+     inter-image distance =  1.675 bohr
+
+     ------------------------------ iteration  15 ------------------------------
+
+     tcpu =  19482.5    self-consistency for image   2
+     tcpu =  20677.7    self-consistency for image   3
+     tcpu =  21797.8    self-consistency for image   4
+
+     activation energy (->) =   1.629927 eV
+     activation energy (<-) =   1.568587 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6955933            0.039805            F
+         3    -119963.7812025            0.050920            F
+         4    -119964.4564148            0.081540            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.709 bohr
+     inter-image distance =  1.677 bohr
+
+     ------------------------------ iteration  16 ------------------------------
+
+     tcpu =  23464.8    self-consistency for image   2
+     tcpu =  24588.2    self-consistency for image   3
+     tcpu =  25744.7    self-consistency for image   4
+
+     activation energy (->) =   1.629717 eV
+     activation energy (<-) =   1.568377 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6959815            0.040442            F
+         3    -119963.7814129            0.048979            F
+         4    -119964.4637988            0.054112            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.718 bohr
+     inter-image distance =  1.680 bohr
+
+     ------------------------------ iteration  17 ------------------------------
+
+     tcpu =  27412.7    self-consistency for image   2
+     tcpu =  28612.1    self-consistency for image   3
+     tcpu =  29762.9    self-consistency for image   4
+
+     activation energy (->) =   1.629532 eV
+     activation energy (<-) =   1.568193 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6962398            0.030178            F
+         3    -119963.7815970            0.044540            F
+         4    -119964.4725838            0.058383            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.729 bohr
+     inter-image distance =  1.682 bohr
+
+     ------------------------------ iteration  18 ------------------------------
+
+     tcpu =  31667.8    self-consistency for image   2
+     tcpu =  32794.7    self-consistency for image   3
+     tcpu =  33936.7    self-consistency for image   4
+
+     activation energy (->) =   1.629363 eV
+     activation energy (<-) =   1.568023 eV
+
+     image        energy (eV)        error (eV/A)        frozen
+
+         1    -119965.4111294            0.039328            T
+         2    -119964.6962954            0.027836            F
+         3    -119963.7817667            0.041559            F
+         4    -119964.4797418            0.044681            F
+         5    -119965.3497899            0.037659            T
+
+     climbing image =  3
+
+     path length          =  6.739 bohr
+     inter-image distance =  1.685 bohr
+
+     ---------------------------------------------------------------------------
+
+
+     neb: convergence achieved in  18 iterations
+ 
+     NEB          :      9h34m CPU      9h56m WALL
+
+ 
+   This run was terminated on:   0:39:20   1Nov2026            
+
+=------------------------------------------------------------------------------=
+   JOB DONE.
+=------------------------------------------------------------------------------=

@@ -1,0 +1,6 @@
+&PROJWFC
+ prefix='nfo_bulk'
+ outdir='./tmp/bulk_k3_nscf'
+ filpdos='bulk_pdos'
+ DeltaE=0.02
+/

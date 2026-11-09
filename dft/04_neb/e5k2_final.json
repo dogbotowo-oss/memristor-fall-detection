@@ -1,0 +1,31 @@
+{
+ "file": "C:\\Users\\lin\\Desktop\\data\\e5k2_final.out",
+ "nat": 55,
+ "converged": true,
+ "converged_line": "bfgs converged in   1 scf cycles and   0 bfgs steps",
+ "maxsteps_reached": false,
+ "steps": 1,
+ "rows": [
+  {
+   "step": 0,
+   "F_Ry": -8817.29058242,
+   "TS_Ry": -0.09896832,
+   "Eint_Ry": -8817.38955074,
+   "maxcomp_eVA": 0.0352,
+   "maxcomp_Ry": 0.001369,
+   "maxatom_eVA": 0.05489,
+   "atom_maxcomp": 52,
+   "atom_maxatom": 40,
+   "TotalForce_Ry": 0.006516
+  }
+ ],
+ "n_force_blocks": 1,
+ "n_energy": 1,
+ "n_ts": 1,
+ "begin_final_coordinates": 1,
+ "n_atomic_positions": 1,
+ "last_maxcomp_Ry": 0.001369,
+ "last_maxcomp_eVA": 0.0352,
+ "last_maxatom_eVA": 0.05489,
+ "criterion_ok": true
+}

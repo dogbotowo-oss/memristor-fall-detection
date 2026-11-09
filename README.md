@@ -24,6 +24,10 @@ VERSIONS.md                                    version registry: which directory
         v1002/                                 SNN branch: weight quantisation onto measured levels
 
 tools/                                         one-off helpers (Word/PPT export, frame dumps)
+
+dft/                                           Quantum ESPRESSO inputs, relaxed structures and
+                                               plot-ready data behind Figure 3(a-e)
+    README.md                                  model, settings, every number quoted in the text
 ```
 
 The other `v*` directories are frozen snapshots kept for provenance; they are not
@@ -89,4 +93,6 @@ for the full list; the important ones are `--video`, `--external-labeled-dir`,
 `s30_pose/v1001/per_fold.csv` holds the per-fold metrics of the main table.
 
 Device data, trained checkpoints and the pose cache needed for exact reproduction live in `data/`, `models/` and `pose_cache/`; see [DATA.md](DATA.md) for provenance, read voltages and what is intentionally not included.
+
+The density-functional calculations behind Figure 3(a-e) are shipped separately in `dft/` (inputs, relaxed structures, plot-ready data); settings and the mapping from each quoted number to its source file are in [dft/README.md](dft/README.md).
 

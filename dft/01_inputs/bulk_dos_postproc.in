@@ -1,0 +1,6 @@
+&DOS
+ prefix='nfo_bulk'
+ outdir='./tmp/bulk_k3_nscf'
+ fildos='bulk_dos.dat'
+ DeltaE=0.02
+/

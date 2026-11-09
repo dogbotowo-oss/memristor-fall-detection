@@ -49,6 +49,15 @@ python 5.9new/crossbar+/CNN+SNN/s30_pose/scripts/repro_v1001_protocol.py \
     --pose-cache-dir pose_cache
 ```
 
+## DFT calculations (`dft/`)
+
+Quantum ESPRESSO inputs, relaxed structures and plot-ready data behind Figure 3(a-e)
+and Supplementary Note S5: ordered Zn0.5Ni0.25Cu0.25Fe2O4 cell (56 atoms), three
+candidate oxygen vacancies (55 atoms) and the five-image CI-NEB oxygen migration path.
+About 3 MB in total. `dft/README.md` documents the model, the settings and every number
+quoted in the manuscript; `dft/03_data/data_validation.json` maps each quoted value to
+the file it came from. Raw QE outputs (~340 MB) are not tracked (see below).
+
 ## Not included
 
 | item | why | where to get it |
@@ -56,6 +65,7 @@ python 5.9new/crossbar+/CNN+SNN/s30_pose/scripts/repro_v1001_protocol.py \
 | GMDCSA-24 v2.1 videos (Subjects 1–4) | dataset licence / size | https://github.com/ekramalam/GMDCSA24-A-Dataset-for-Human-Fall-Detection-in-Videos |
 | Zenodo fall-detection split (18 validation videos) | dataset licence / size | Zenodo record cited in the manuscript |
 | `I_V (100cycle).csv` (4.5 MB) | only needed for the I–V plots | available from the authors on request |
+| raw QE outputs of the DFT jobs (~340 MB) | size; every quoted number is already in `dft/03_data/` | available from the authors on request |
 
 ## Label tables (`data/`)
 

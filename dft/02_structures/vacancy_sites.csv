@@ -1,0 +1,16 @@
+site,bulk_atom_index,cart_x_A,cart_y_A,cart_z_A,frac_x,frac_y,frac_z,neighbour_number,neighbour_type,element,role,distance_A
+O27,27,7.468808,5.382681,1.182731,0.889144,0.640795,0.140801,,, , ,
+O27,27,,,,,,,1,Zn,Zn,A-tetra,1.9275
+O27,27,,,,,,,2,FeB,Fe,B-octa,1.9635
+O27,27,,,,,,,3,FeB,Fe,B-octa,1.9652
+O27,27,,,,,,,4,Cu,Cu,B-octa,2.1699
+O43,43,3.085807,5.226345,1.026858,0.367358,0.622184,0.122245,,, , ,
+O43,43,,,,,,,1,FeA,Fe,A-tetra,1.8770
+O43,43,,,,,,,2,FeB,Fe,B-octa,2.0080
+O43,43,,,,,,,3,FeB,Fe,B-octa,2.0092
+O43,43,,,,,,,4,Cu,Cu,B-octa,2.2188
+O41,41,7.436708,5.230410,5.229777,0.885322,0.622668,0.622592,,, , ,
+O41,41,,,,,,,1,FeA,Fe,A-tetra,1.9132
+O41,41,,,,,,,2,FeB,Fe,B-octa,2.0685
+O41,41,,,,,,,3,FeB,Fe,B-octa,2.0880
+O41,41,,,,,,,4,FeB,Fe,B-octa,2.0892
